@@ -1,0 +1,29 @@
+{
+  "name": "skyloom-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Skyloom desktop shell: Electron main process runs skyloom-core, the renderer never sees API keys.",
+  "main": "dist/electron/main.cjs",
+  "engines": { "node": ">=22.12" },
+  "scripts": {
+    "dev": "vite",
+    "build:renderer": "vite build",
+    "build:electron": "node scripts/build-electron.mjs",
+    "build": "npm run build:renderer && npm run build:electron",
+    "start": "npm run build && electron .",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "skyloom-core": "file:../skyloom-core"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "electron": "^43.0.0",
+    "esbuild": "^0.28.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.0.0",
+    "vitest": "^5.0.4"
+  }
+}
