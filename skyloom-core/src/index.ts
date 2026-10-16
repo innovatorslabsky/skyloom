@@ -12,3 +12,5 @@ export type { BatchSpec, Estimate, ItemResult } from './pipeline.ts';
 export { openAiCompatText } from './providers/openaiCompat.ts';
 export type { OpenAiCompatConfig } from './providers/openaiCompat.ts';
 export { mockProvider } from './providers/mock.ts';
+export { falVideo } from './providers/fal.ts';
+export type { FalVideoConfig } from './providers/fal.ts';
