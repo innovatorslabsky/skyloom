@@ -101,7 +101,7 @@ async function batchView(): Promise<HTMLElement> {
 
   function finish(out: BatchOutcome): void {
     out.items.forEach((it, i) => {
-      if (it.ok) setStatus(i, `Xong · ${usdText(it.costMicro ?? 0)}`, 'ok', `${it.provider}${it.mediaUrl ? ` · ${it.mediaUrl}` : ''}`);
+      if (it.ok) setStatus(i, `Xong · ${usdText(it.costMicro ?? 0)}`, 'ok', `${it.provider}${it.file ? ` · đã lưu ${it.file}` : it.downloadError ? ` · không tải được: ${it.downloadError}` : it.mediaUrl ? ` · ${it.mediaUrl}` : ''}`);
       else setStatus(i, 'Lỗi', 'bad', it.error);
     });
     const ok = out.items.filter((i) => i.ok).length;
@@ -111,7 +111,7 @@ async function batchView(): Promise<HTMLElement> {
 
   return h('div', {},
     h('div', { class: 'card' }, h('h2', {}, 'Ý tưởng'), ideas,
-      h('div', { class: 'grid', style: 'margin-top:12px' },
+      h('div', { class: 'grid mt12' },
         field('Độ dài (giây)', dur), field('Tỉ lệ', aspect), field('Độ nét', res),
         field('Ngân sách tối đa (USD)', budget, 'Dừng cứng khi chạm trần.'), field('Chọn nhà cung cấp', strategy)),
       h('label', { class: 'check' }, expand, 'Dùng văn bản AI mở rộng mỗi ý tưởng thành mô tả cảnh quay trước'),
@@ -169,7 +169,7 @@ async function providersView(secureKeys: boolean, demo: boolean): Promise<HTMLEl
       list.length === 0 ? h('div', { class: 'hint' }, 'Chưa có nhà cung cấp nào.') :
         h('table', {}, h('tbody', {}, ...list.map((p) => h('tr', {}, h('td', {}, p.label), h('td', {}, p.kind === 'fal-video' ? 'video' : 'văn bản'), h('td', {}, p.model), h('td', {}, p.baseUrl),
           h('td', {}, h('button', { class: 'btn ghost', onclick: async () => { await api.removeProvider(p.id); void render(); } }, 'Xoá')))))),
-      h('div', { class: 'hint', style: 'margin-top:10px' }, 'Khoá API được gửi một lần tới tiến trình chính, mã hoá bằng kho khoá hệ điều hành và không bao giờ đọc ngược lại ra giao diện.')),
+      h('div', { class: 'hint mt10' }, 'Khoá API được gửi một lần tới tiến trình chính, mã hoá bằng kho khoá hệ điều hành và không bao giờ đọc ngược lại ra giao diện.')),
     h('div', { class: 'card' }, h('h2', {}, 'Thêm nhà cung cấp'),
       h('div', { class: 'grid' }, field('Loại', f.kind), field('Mã', f.id), field('Tên', f.label), field('Địa chỉ API', f.baseUrl, 'Phải là https.'), field('Model', f.model, 'fal: mã endpoint của model, lấy từ trang model.'), field('Khoá API', f.key),
         field('Giới hạn request/phút', f.rpm), field('Giá vào (USD/1M token)', f.pin), field('Giá ra (USD/1M token)', f.pout),

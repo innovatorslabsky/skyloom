@@ -32,7 +32,9 @@ export interface BatchRequest {
 }
 export type EstimateResult = { ok: true; perItem: number; total: number; text: string } | { ok: false; error: string };
 
-export interface ItemOutcome { idea: string; ok: boolean; error?: string; provider?: string; costMicro?: number; prompt?: string; mediaUrl?: string }
+export interface ItemOutcome { idea: string; ok: boolean; error?: string; provider?: string; costMicro?: number; prompt?: string; mediaUrl?: string;
+  /** Path of the saved video relative to the batch folder (desktop only). */
+  file?: string; downloadError?: string }
 export interface BatchOutcome { items: ItemOutcome[]; spentMicro: number; cancelled: boolean; outputDir?: string }
 
 export interface AppInfo { mode: 'desktop' | 'demo'; secureKeys: boolean; note?: string }

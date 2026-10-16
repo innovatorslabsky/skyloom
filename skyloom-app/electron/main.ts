@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { SkyloomService } from '../src/service.ts';
 import type { AppInfo, BatchOutcome, BatchRequest, ProviderInput } from '../src/shared/api.ts';
+import { downloadBatch } from './download.ts';
 import { encryptedKeyStore, jsonConfigStore } from './stores.ts';
 import type { Cipher } from './stores.ts';
 
@@ -16,11 +17,8 @@ const cipher: Cipher = {
 let win: BrowserWindow | undefined;
 let service: SkyloomService;
 
-async function writeManifest(req: BatchRequest, out: BatchOutcome): Promise<string> {
-  const dir = join(app.getPath('documents'), 'Skyloom', new Date().toISOString().replace(/[:.]/g, '-'));
-  await mkdir(dir, { recursive: true });
+async function writeManifest(req: BatchRequest, out: BatchOutcome, dir: string): Promise<void> {
   await writeFile(join(dir, 'batch.json'), JSON.stringify({ request: req, outcome: out }, null, 2));
-  return dir;
 }
 
 function wire(): void {
@@ -32,7 +30,11 @@ function wire(): void {
   ipcMain.handle('batch:run', async (_e, r: BatchRequest) => {
     const out = await service.run(r);
     if ('error' in out) return out;
-    return { ...out, outputDir: await writeManifest(r, out) };
+    const dir = join(app.getPath('documents'), 'Skyloom', new Date().toISOString().replace(/[:.]/g, '-'));
+    await mkdir(dir, { recursive: true });
+    const saved = await downloadBatch(out, dir);
+    await writeManifest(r, saved, dir);
+    return { ...saved, outputDir: dir };
   });
   ipcMain.handle('batch:cancel', () => service.cancel());
 }
