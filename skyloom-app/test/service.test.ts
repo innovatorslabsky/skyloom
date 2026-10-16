@@ -119,3 +119,57 @@ describe('real text provider path', () => {
     expect(out.items[0]).toMatchObject({ ok: true, prompt: 'cảnh chi tiết' });
   });
 });
+
+describe('fal video provider', () => {
+  const fal = (over: Partial<ProviderInput> = {}): ProviderInput => ({ id: 'fal-wan', label: 'fal', kind: 'fal-video', baseUrl: '', model: 'vendor/model', usdPerSecond: 0.1, apiKey: 'fal-secret', ...over });
+  let close: (() => Promise<void>) | undefined;
+  afterEach(async () => { await close?.(); close = undefined; });
+
+  it('validates: price is required, kind is checked, empty address means the https default', () => {
+    expect(validateProvider(fal())).toBeUndefined();
+    const { usdPerSecond: _omit, ...noPrice } = fal();
+    expect(validateProvider(noPrice)).toMatch(/giá mỗi giây/);
+    expect(validateProvider(fal({ kind: 'nope' as any }))).toMatch(/Loại/);
+    expect(validateProvider(fal({ baseUrl: 'http://example.com' }))).toMatch(/https/);
+    expect(validateProvider(fal({ extraInput: [] as any }))).toMatch(/JSON/);
+  });
+
+  it('stores the default address, keeps the key out of config, and shows up as the only video provider', async () => {
+    const m = memory();
+    const s = new SkyloomService({ keys: m.keyStore, config: m.config, demo: true, demoDelayMs: 1 });
+    expect((await s.saveProvider(fal())).ok).toBe(true);
+    expect(m.cfg[0]).toMatchObject({ kind: 'fal-video', baseUrl: 'https://queue.fal.run', usdPerSecond: 0.1 });
+    expect(JSON.stringify(m.cfg)).not.toContain('fal-secret');
+    const est = await s.estimate(req({ ideas: ['a'], durationSec: 5 }));
+    expect(est).toMatchObject({ ok: true, perItem: 500_000 }); // 5 s × $0.10, not the demo provider's price
+  });
+
+  it('runs a batch against a fake fal queue and charges seconds × price', async () => {
+    const seen: { auth?: string; body?: any }[] = [];
+    let origin = '';
+    const server = createServer((rq, rs) => {
+      let raw = '';
+      rq.on('data', (d) => (raw += d));
+      rq.on('end', () => {
+        rs.setHeader('content-type', 'application/json');
+        if (rq.method === 'POST') {
+          seen.push({ auth: rq.headers.authorization, body: JSON.parse(raw) });
+          rs.end(JSON.stringify({ request_id: 'r', status_url: `${origin}/v/m/requests/r/status`, response_url: `${origin}/v/m/requests/r` }));
+        } else if (rq.url!.endsWith('/status')) rs.end(JSON.stringify({ status: 'COMPLETED' }));
+        else rs.end(JSON.stringify({ video: { url: 'https://cdn.example/v.mp4' } }));
+      });
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    close = () => new Promise((r) => server.close(() => r()));
+    origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const m = memory();
+    const s = new SkyloomService({ keys: m.keyStore, config: m.config, retryBaseMs: 1, pollIntervalMs: 1 });
+    await s.saveProvider(fal({ baseUrl: origin, model: 'v/m', extraInput: { seed: 7 } }));
+    const out = await s.run(req({ ideas: ['núi'], durationSec: 5 }));
+    if ('error' in out) throw new Error(out.error);
+    expect(out.items[0]).toMatchObject({ ok: true, provider: 'fal-wan', mediaUrl: 'https://cdn.example/v.mp4' });
+    expect(out.spentMicro).toBe(500_000);
+    expect(seen[0]!.auth).toBe('Key fal-secret');
+    expect(seen[0]!.body).toMatchObject({ prompt: 'núi', duration: 5, seed: 7 });
+  });
+});

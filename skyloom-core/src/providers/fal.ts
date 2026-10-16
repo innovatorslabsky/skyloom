@@ -18,6 +18,8 @@ export interface FalVideoConfig {
   baseUrl?: string;
   /** Request body for this model. Parameter names differ per model, so override this when the default does not fit. */
   buildInput?: (call: VideoCall) => Record<string, unknown>;
+  /** Extra body fields merged over the default request (e.g. a model's own parameters). Ignored when `buildInput` is set. */
+  extraInput?: Record<string, unknown>;
   /** Pull the video URL out of the result. Default looks for `video.url`, then `videos[0].url`. */
   extractUrl?: (result: unknown) => string | undefined;
   rpm?: number;
@@ -54,7 +56,7 @@ export function falVideo(c: FalVideoConfig): Provider {
   const base = (c.baseUrl ?? 'https://queue.fal.run').replace(/\/$/, '');
   const origin = new URL(base).origin;
   const headers = { 'content-type': 'application/json', authorization: `Key ${c.apiKey}` };
-  const build = c.buildInput ?? defaultInput;
+  const build = c.buildInput ?? ((v: VideoCall) => ({ ...defaultInput(v), ...c.extraInput }));
   const extract = c.extractUrl ?? defaultExtract;
 
   async function http(url: string, init: RequestInit, signal: AbortSignal): Promise<unknown> {

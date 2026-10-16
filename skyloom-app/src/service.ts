@@ -1,4 +1,4 @@
-import { Budget, JobQueue, NoProviderError, Registry, estimateBatch, mockProvider, openAiCompatText, runBatch, usd } from 'skyloom-core';
+import { Budget, JobQueue, NoProviderError, Registry, estimateBatch, mockProvider, falVideo, openAiCompatText, runBatch, usd } from 'skyloom-core';
 import type { BatchSpec, QueueEvent } from 'skyloom-core';
 import type { BatchOutcome, BatchRequest, EstimateResult, ProviderConfig, ProviderInput } from './shared/api.ts';
 
@@ -20,10 +20,13 @@ export interface ServiceOptions {
   /** Mock latency in demo mode, ms. */
   demoDelayMs?: number;
   retryBaseMs?: number;
+  /** Poll interval for async video jobs, ms. */
+  pollIntervalMs?: number;
   onEvent?: (e: QueueEvent) => void;
 }
 
 const ID = /^[a-z0-9][a-z0-9-]{0,39}$/;
+export const FAL_DEFAULT_URL = 'https://queue.fal.run';
 
 /** Keys are only sent over https, except to a loopback address (local gateways, tests). */
 export function validateProvider(p: ProviderInput): string | undefined {
@@ -31,13 +34,20 @@ export function validateProvider(p: ProviderInput): string | undefined {
   if (!p.label.trim()) return 'Cần đặt tên hiển thị.';
   if (!p.model.trim()) return 'Cần nhập tên model.';
   if (!p.apiKey.trim()) return 'Cần nhập khoá API.';
+  if (p.kind !== 'openai-compat-text' && p.kind !== 'fal-video') return 'Loại nhà cung cấp không hợp lệ.';
+  const fal = p.kind === 'fal-video';
   let u: URL;
-  try { u = new URL(p.baseUrl); } catch { return 'Địa chỉ API không hợp lệ.'; }
+  try { u = new URL(fal && !p.baseUrl.trim() ? FAL_DEFAULT_URL : p.baseUrl); } catch { return 'Địa chỉ API không hợp lệ.'; }
   const loopback = u.hostname === 'localhost' || u.hostname === '127.0.0.1' || u.hostname === '[::1]';
   if (u.protocol !== 'https:' && !(u.protocol === 'http:' && loopback)) return 'Địa chỉ API phải dùng https (chỉ http khi là localhost).';
   if (u.username || u.password) return 'Không đặt tài khoản/mật khẩu trong địa chỉ API.';
-  for (const [k, v] of [['rpm', p.rpm], ['giá vào', p.usdPerMillionIn], ['giá ra', p.usdPerMillionOut]] as const) {
+  for (const [k, v] of [['rpm', p.rpm], ['giá vào', p.usdPerMillionIn], ['giá ra', p.usdPerMillionOut], ['giá mỗi giây', p.usdPerSecond]] as const) {
     if (v !== undefined && (!Number.isFinite(v) || v < 0)) return `Giá trị "${k}" không hợp lệ.`;
+  }
+  if (fal) {
+    // A video call that looks free would defeat the budget cap, so the price must be stated explicitly.
+    if (p.usdPerSecond === undefined) return 'Cần nhập giá mỗi giây của model (xem trang model trên fal).';
+    if (p.extraInput !== undefined && (typeof p.extraInput !== 'object' || p.extraInput === null || Array.isArray(p.extraInput) || JSON.stringify(p.extraInput).length > 4000)) return 'Tham số bổ sung phải là một đối tượng JSON nhỏ.';
   }
   return undefined;
 }
@@ -64,7 +74,8 @@ export class SkyloomService {
   async saveProvider(p: ProviderInput): Promise<{ ok: true } | { ok: false; error: string }> {
     const error = validateProvider(p);
     if (error) return { ok: false, error };
-    const { apiKey, ...cfg } = p;
+    const { apiKey, ...rest } = p;
+    const cfg: ProviderConfig = p.kind === 'fal-video' ? { ...rest, baseUrl: rest.baseUrl.trim() || FAL_DEFAULT_URL } : rest;
     const list = (await this.#o.config.load()).filter((x) => x.id !== cfg.id);
     try {
       // Key first: if it cannot be stored safely, no provider entry is created.
@@ -72,7 +83,7 @@ export class SkyloomService {
     } catch (e) {
       return { ok: false, error: (e as Error).message };
     }
-    await this.#o.config.save([...list, { ...cfg, kind: 'openai-compat-text' }]);
+    await this.#o.config.save([...list, cfg]);
     return { ok: true };
   }
   async removeProvider(id: string): Promise<void> {
@@ -85,12 +96,21 @@ export class SkyloomService {
     for (const c of await this.#o.config.load()) {
       const apiKey = await this.#o.keys.get(c.id);
       if (!apiKey) continue; // a provider without a key is simply unavailable
-      registry.register(openAiCompatText({ ...c, apiKey, ...(this.#o.fetch ? { fetch: this.#o.fetch } : {}) }));
+      const f = this.#o.fetch ? { fetch: this.#o.fetch } : {};
+      if (c.kind === 'fal-video') {
+        registry.register(falVideo({
+          id: c.id, label: c.label, apiKey, model: c.model, usdPerSecond: c.usdPerSecond ?? 0, baseUrl: c.baseUrl || FAL_DEFAULT_URL,
+          ...(c.extraInput ? { extraInput: c.extraInput } : {}), ...(c.rpm !== undefined ? { rpm: c.rpm } : {}),
+          ...(this.#o.pollIntervalMs !== undefined ? { pollIntervalMs: this.#o.pollIntervalMs } : {}), ...f,
+        }));
+      } else {
+        registry.register(openAiCompatText({ ...c, apiKey, ...f }));
+      }
     }
     if (this.#o.demo) {
       const delay = () => new Promise<void>((r) => setTimeout(r, this.#o.demoDelayMs ?? 400));
       if (!registry.list().some((p) => p.kinds.includes('text'))) registry.register(mockProvider({ id: 'demo-text', kinds: ['text'], delay, maxConcurrent: 4 }));
-      registry.register(mockProvider({ id: 'demo-video', kinds: ['video', 'image'], costPerCall: usd(0.05), failFirst: 1, delay, maxConcurrent: 3 }));
+      if (!registry.list().some((p) => p.kinds.includes('video'))) registry.register(mockProvider({ id: 'demo-video', kinds: ['video', 'image'], costPerCall: usd(0.05), failFirst: 1, delay, maxConcurrent: 3 }));
     }
     return registry;
   }

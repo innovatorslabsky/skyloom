@@ -4,12 +4,17 @@ import type { Aspect, QueueEvent, Strategy } from 'skyloom-core';
 export interface ProviderConfig {
   id: string;
   label: string;
-  kind: 'openai-compat-text';
+  kind: 'openai-compat-text' | 'fal-video';
+  /** For fal-video, empty means the default https://queue.fal.run. */
   baseUrl: string;
   model: string;
   rpm?: number;
   usdPerMillionIn?: number;
   usdPerMillionOut?: number;
+  /** fal-video: USD per second of video, from the model's page. */
+  usdPerSecond?: number;
+  /** fal-video: extra request fields specific to the model. */
+  extraInput?: Record<string, unknown>;
 }
 /** Only ever sent renderer → main, once, when saving. */
 export interface ProviderInput extends ProviderConfig { apiKey: string }

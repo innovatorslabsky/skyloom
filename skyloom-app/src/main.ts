@@ -18,7 +18,7 @@ function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string, 
   el.append(...kids);
   return el;
 }
-const field = (label: string, input: HTMLElement, hint?: string) => h('div', {}, h('label', {}, label), input, ...(hint ? [h('div', { class: 'hint' }, hint)] : []));
+const field = (label: string, input: HTMLElement, hint?: string) => h('div', { class: 'fld' }, h('label', {}, label), input, ...(hint ? [h('div', { class: 'hint' }, hint)] : []));
 
 const root = document.getElementById('app')!;
 let tab: 'batch' | 'providers' = 'batch';
@@ -122,36 +122,57 @@ async function providersView(secureKeys: boolean, demo: boolean): Promise<HTMLEl
   const list = await api.listProviders();
   const msg = h('div', { class: 'msg', 'aria-live': 'polite' });
   const f = {
+    kind: h('select', {}, h('option', { value: 'openai-compat-text' }, 'Văn bản (chat-completions)'), h('option', { value: 'fal-video' }, 'Video (fal.ai)')),
+    usdPerSecond: h('input', { type: 'number', min: 0, step: 'any', placeholder: 'USD cho mỗi giây video' }),
+    extra: h('textarea', { rows: 3, placeholder: '{"tham_số": "giá trị"} (tuỳ chọn)' }),
     id: h('input', { placeholder: 'vd: nvidia-text' }), label: h('input', { placeholder: 'Tên hiển thị' }),
-    baseUrl: h('input', { placeholder: 'https://…/v1' }), model: h('input', { placeholder: 'Tên model' }),
+    baseUrl: h('input', { placeholder: 'https://…/v1 (fal: để trống = mặc định)' }), model: h('input', { placeholder: 'Tên model' }),
     key: h('input', { type: 'password', autocomplete: 'off', placeholder: 'Khoá API của bạn' }),
     rpm: h('input', { type: 'number', min: 1, placeholder: 'vd: 40' }),
     pin: h('input', { type: 'number', min: 0, step: 'any', placeholder: '0 nếu miễn phí' }), pout: h('input', { type: 'number', min: 0, step: 'any', placeholder: '0 nếu miễn phí' }),
   };
   const num = (el: HTMLInputElement) => (el.value === '' ? undefined : Number(el.value));
   const save = h('button', { class: 'btn' }, 'Lưu nhà cung cấp');
+  const textOnly = [f.pin, f.pout];
+  const videoOnly = [f.usdPerSecond, f.extra];
+  const syncKind = () => {
+    const video = f.kind.value === 'fal-video';
+    for (const el of textOnly) el.closest('.fld')!.toggleAttribute('hidden', video);
+    for (const el of videoOnly) el.closest('.fld')!.toggleAttribute('hidden', !video);
+  };
+  f.kind.addEventListener('change', syncKind);
   save.addEventListener('click', async () => {
+    let extraInput: Record<string, unknown> | undefined;
+    if (f.kind.value === 'fal-video' && f.extra.value.trim()) {
+      try { extraInput = JSON.parse(f.extra.value) as Record<string, unknown>; } catch { msg.className = 'msg err'; msg.textContent = 'Tham số bổ sung không phải JSON hợp lệ.'; return; }
+    }
+    const video = f.kind.value === 'fal-video';
     const p: ProviderInput = {
-      id: f.id.value.trim(), label: f.label.value.trim(), kind: 'openai-compat-text', baseUrl: f.baseUrl.value.trim(), model: f.model.value.trim(), apiKey: f.key.value,
-      ...(num(f.rpm) !== undefined ? { rpm: num(f.rpm)! } : {}), ...(num(f.pin) !== undefined ? { usdPerMillionIn: num(f.pin)! } : {}), ...(num(f.pout) !== undefined ? { usdPerMillionOut: num(f.pout)! } : {}),
+      id: f.id.value.trim(), label: f.label.value.trim(), kind: video ? 'fal-video' : 'openai-compat-text', baseUrl: f.baseUrl.value.trim(), model: f.model.value.trim(), apiKey: f.key.value,
+      ...(num(f.rpm) !== undefined ? { rpm: num(f.rpm)! } : {}), ...(!video && num(f.pin) !== undefined ? { usdPerMillionIn: num(f.pin)! } : {}), ...(!video && num(f.pout) !== undefined ? { usdPerMillionOut: num(f.pout)! } : {}),
+      ...(video && num(f.usdPerSecond) !== undefined ? { usdPerSecond: num(f.usdPerSecond)! } : {}), ...(extraInput ? { extraInput } : {}),
     };
     const r = await api.saveProvider(p);
     f.key.value = ''; // never keep the key in the page after sending it
     if (!r.ok) { msg.className = 'msg err'; msg.textContent = r.error; return; }
     tab = 'providers'; void render();
   });
-  return h('div', {},
+  const wrap = h('div', {},
     ...(secureKeys ? [] : [h('div', { class: 'note' }, 'Máy này chưa có kho khoá an toàn của hệ điều hành, nên ứng dụng sẽ không lưu khoá API.')]),
-    h('div', { class: 'card' }, h('h2', {}, 'Nhà cung cấp văn bản (tương thích chat-completions)'),
+    h('div', { class: 'card' }, h('h2', {}, 'Nhà cung cấp đã thêm'),
       list.length === 0 ? h('div', { class: 'hint' }, 'Chưa có nhà cung cấp nào.') :
-        h('table', {}, h('tbody', {}, ...list.map((p) => h('tr', {}, h('td', {}, p.label), h('td', {}, p.model), h('td', {}, p.baseUrl),
+        h('table', {}, h('tbody', {}, ...list.map((p) => h('tr', {}, h('td', {}, p.label), h('td', {}, p.kind === 'fal-video' ? 'video' : 'văn bản'), h('td', {}, p.model), h('td', {}, p.baseUrl),
           h('td', {}, h('button', { class: 'btn ghost', onclick: async () => { await api.removeProvider(p.id); void render(); } }, 'Xoá')))))),
       h('div', { class: 'hint', style: 'margin-top:10px' }, 'Khoá API được gửi một lần tới tiến trình chính, mã hoá bằng kho khoá hệ điều hành và không bao giờ đọc ngược lại ra giao diện.')),
     h('div', { class: 'card' }, h('h2', {}, 'Thêm nhà cung cấp'),
-      h('div', { class: 'grid' }, field('Mã', f.id), field('Tên', f.label), field('Địa chỉ API', f.baseUrl, 'Phải là https.'), field('Model', f.model), field('Khoá API', f.key),
-        field('Giới hạn request/phút', f.rpm), field('Giá vào (USD/1M token)', f.pin), field('Giá ra (USD/1M token)', f.pout)),
+      h('div', { class: 'grid' }, field('Loại', f.kind), field('Mã', f.id), field('Tên', f.label), field('Địa chỉ API', f.baseUrl, 'Phải là https.'), field('Model', f.model, 'fal: mã endpoint của model, lấy từ trang model.'), field('Khoá API', f.key),
+        field('Giới hạn request/phút', f.rpm), field('Giá vào (USD/1M token)', f.pin), field('Giá ra (USD/1M token)', f.pout),
+        field('Giá mỗi giây video (USD)', f.usdPerSecond, 'Lấy từ trang giá của model; app dùng số này để báo giá và giữ trần ngân sách.'),
+        field('Tham số bổ sung (JSON)', f.extra, 'Tham số riêng của model, gộp vào request. Mặc định app gửi prompt, duration, aspect_ratio, resolution.')),
       h('div', { class: 'row' }, save), msg),
-    h('div', { class: 'note' }, demo ? 'Nhà cung cấp video chưa có trong bản này. Chế độ chạy thử dùng nhà cung cấp giả để bạn xem trọn luồng.' : 'Nhà cung cấp video chưa có trong bản này, nên chưa thể chạy lô thật. Bộ chuyển đổi video sẽ được thêm sau khi chọn nhà cung cấp.'));
+    h('div', { class: 'note' }, list.some((p) => p.kind === 'fal-video') ? 'Đã có nhà cung cấp video. Tên tham số và dạng kết quả khác nhau theo từng model fal: hãy chạy thử một lô nhỏ trước.' : demo ? 'Chưa có nhà cung cấp video. Chế độ chạy thử dùng nhà cung cấp giả để bạn xem trọn luồng.' : 'Chưa có nhà cung cấp video nên chưa chạy được lô thật. Hãy thêm một nhà cung cấp loại "Video (fal.ai)".'));
+  syncKind();
+  return wrap;
 }
 
 void render();

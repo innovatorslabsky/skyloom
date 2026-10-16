@@ -27,5 +27,5 @@ npm test && npm run typecheck
 
 ## Chưa có
 
-- **Nhà cung cấp video thật.** Khi chưa có, bản desktop không chạy được lô thật (chỉ chế độ chạy thử có nhà cung cấp giả).
+- **Nhà cung cấp video fal.ai đã nối vào app nhưng chưa thử với fal thật.** Thêm ở tab "Nhà cung cấp", loại "Video (fal.ai)": nhập mã endpoint của model, khoá và giá mỗi giây (lấy từ trang model). Tên tham số mặc định (`prompt`, `duration`, `aspect_ratio`, `resolution`) và trường kết quả (`video.url`) chưa kiểm chứng với từng model; dùng "Tham số bổ sung (JSON)" để chỉnh, và chạy thử một lô nhỏ trước. Chưa có nhà cung cấp video khác (Veo, v.v.).
 - Chưa thử trên Windows/macOS, chưa đóng gói bộ cài (electron-builder), chưa có lịch sử lô, chưa tải file media về máy.
