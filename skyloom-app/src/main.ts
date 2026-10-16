@@ -1,3 +1,4 @@
+import { FAL_PRESETS } from 'skyloom-core';
 import type { QueueEvent } from 'skyloom-core';
 import { createDemoApi } from './demoApi.ts';
 import type { BatchOutcome, BatchRequest, ProviderInput, SkyloomApi } from './shared/api.ts';
@@ -123,6 +124,7 @@ async function providersView(secureKeys: boolean, demo: boolean): Promise<HTMLEl
   const msg = h('div', { class: 'msg', 'aria-live': 'polite' });
   const f = {
     kind: h('select', {}, h('option', { value: 'openai-compat-text' }, 'Văn bản (chat-completions)'), h('option', { value: 'fal-video' }, 'Video (fal.ai)')),
+    preset: h('select', {}, h('option', { value: '' }, 'Tuỳ chỉnh (dạng request chung)'), ...FAL_PRESETS.map((x) => h('option', { value: x.id }, x.label))),
     usdPerSecond: h('input', { type: 'number', min: 0, step: 'any', placeholder: 'USD cho mỗi giây video' }),
     extra: h('textarea', { rows: 3, placeholder: '{"tham_số": "giá trị"} (tuỳ chọn)' }),
     id: h('input', { placeholder: 'vd: nvidia-text' }), label: h('input', { placeholder: 'Tên hiển thị' }),
@@ -134,13 +136,17 @@ async function providersView(secureKeys: boolean, demo: boolean): Promise<HTMLEl
   const num = (el: HTMLInputElement) => (el.value === '' ? undefined : Number(el.value));
   const save = h('button', { class: 'btn' }, 'Lưu nhà cung cấp');
   const textOnly = [f.pin, f.pout];
-  const videoOnly = [f.usdPerSecond, f.extra];
+  const videoOnly = [f.preset, f.usdPerSecond, f.extra];
   const syncKind = () => {
     const video = f.kind.value === 'fal-video';
     for (const el of textOnly) el.closest('.fld')!.toggleAttribute('hidden', video);
     for (const el of videoOnly) el.closest('.fld')!.toggleAttribute('hidden', !video);
   };
   f.kind.addEventListener('change', syncKind);
+  f.preset.addEventListener('change', () => {
+    const x = FAL_PRESETS.find((q) => q.id === f.preset.value);
+    if (x) f.model.value = x.model; // suggestion only: the user can still edit it (e.g. standard → pro)
+  });
   save.addEventListener('click', async () => {
     let extraInput: Record<string, unknown> | undefined;
     if (f.kind.value === 'fal-video' && f.extra.value.trim()) {
@@ -150,7 +156,7 @@ async function providersView(secureKeys: boolean, demo: boolean): Promise<HTMLEl
     const p: ProviderInput = {
       id: f.id.value.trim(), label: f.label.value.trim(), kind: video ? 'fal-video' : 'openai-compat-text', baseUrl: f.baseUrl.value.trim(), model: f.model.value.trim(), apiKey: f.key.value,
       ...(num(f.rpm) !== undefined ? { rpm: num(f.rpm)! } : {}), ...(!video && num(f.pin) !== undefined ? { usdPerMillionIn: num(f.pin)! } : {}), ...(!video && num(f.pout) !== undefined ? { usdPerMillionOut: num(f.pout)! } : {}),
-      ...(video && num(f.usdPerSecond) !== undefined ? { usdPerSecond: num(f.usdPerSecond)! } : {}), ...(extraInput ? { extraInput } : {}),
+      ...(video && f.preset.value ? { preset: f.preset.value } : {}), ...(video && num(f.usdPerSecond) !== undefined ? { usdPerSecond: num(f.usdPerSecond)! } : {}), ...(extraInput ? { extraInput } : {}),
     };
     const r = await api.saveProvider(p);
     f.key.value = ''; // never keep the key in the page after sending it
@@ -167,7 +173,7 @@ async function providersView(secureKeys: boolean, demo: boolean): Promise<HTMLEl
     h('div', { class: 'card' }, h('h2', {}, 'Thêm nhà cung cấp'),
       h('div', { class: 'grid' }, field('Loại', f.kind), field('Mã', f.id), field('Tên', f.label), field('Địa chỉ API', f.baseUrl, 'Phải là https.'), field('Model', f.model, 'fal: mã endpoint của model, lấy từ trang model.'), field('Khoá API', f.key),
         field('Giới hạn request/phút', f.rpm), field('Giá vào (USD/1M token)', f.pin), field('Giá ra (USD/1M token)', f.pout),
-        field('Giá mỗi giây video (USD)', f.usdPerSecond, 'Lấy từ trang giá của model; app dùng số này để báo giá và giữ trần ngân sách.'),
+        field('Mẫu model video', f.preset, 'Mẫu quyết định tên tham số và độ dài hỗ trợ. Chọn mẫu sẽ điền gợi ý vào ô Model.'), field('Giá mỗi giây video (USD)', f.usdPerSecond, 'Lấy từ trang giá của model; app dùng số này để báo giá và giữ trần ngân sách.'),
         field('Tham số bổ sung (JSON)', f.extra, 'Tham số riêng của model, gộp vào request. Mặc định app gửi prompt, duration, aspect_ratio, resolution.')),
       h('div', { class: 'row' }, save), msg),
     h('div', { class: 'note' }, list.some((p) => p.kind === 'fal-video') ? 'Đã có nhà cung cấp video. Tên tham số và dạng kết quả khác nhau theo từng model fal: hãy chạy thử một lô nhỏ trước.' : demo ? 'Chưa có nhà cung cấp video. Chế độ chạy thử dùng nhà cung cấp giả để bạn xem trọn luồng.' : 'Chưa có nhà cung cấp video nên chưa chạy được lô thật. Hãy thêm một nhà cung cấp loại "Video (fal.ai)".'));

@@ -1,4 +1,4 @@
-import { Budget, JobQueue, NoProviderError, Registry, estimateBatch, mockProvider, falVideo, openAiCompatText, runBatch, usd } from 'skyloom-core';
+import { Budget, JobQueue, NoProviderError, Registry, estimateBatch, mockProvider, FAL_PRESETS, falPreset, falVideo, openAiCompatText, runBatch, usd } from 'skyloom-core';
 import type { BatchSpec, QueueEvent } from 'skyloom-core';
 import type { BatchOutcome, BatchRequest, EstimateResult, ProviderConfig, ProviderInput } from './shared/api.ts';
 
@@ -47,6 +47,7 @@ export function validateProvider(p: ProviderInput): string | undefined {
   if (fal) {
     // A video call that looks free would defeat the budget cap, so the price must be stated explicitly.
     if (p.usdPerSecond === undefined) return 'Cần nhập giá mỗi giây của model (xem trang model trên fal).';
+    if (p.preset && !falPreset(p.preset)) return 'Mẫu model không hợp lệ.';
     if (p.extraInput !== undefined && (typeof p.extraInput !== 'object' || p.extraInput === null || Array.isArray(p.extraInput) || JSON.stringify(p.extraInput).length > 4000)) return 'Tham số bổ sung phải là một đối tượng JSON nhỏ.';
   }
   return undefined;
@@ -100,7 +101,7 @@ export class SkyloomService {
       if (c.kind === 'fal-video') {
         registry.register(falVideo({
           id: c.id, label: c.label, apiKey, model: c.model, usdPerSecond: c.usdPerSecond ?? 0, baseUrl: c.baseUrl || FAL_DEFAULT_URL,
-          ...(c.extraInput ? { extraInput: c.extraInput } : {}), ...(c.rpm !== undefined ? { rpm: c.rpm } : {}),
+          ...(c.extraInput ? { extraInput: c.extraInput } : {}), ...(c.preset ? { preset: c.preset } : {}), ...(c.rpm !== undefined ? { rpm: c.rpm } : {}),
           ...(this.#o.pollIntervalMs !== undefined ? { pollIntervalMs: this.#o.pollIntervalMs } : {}), ...f,
         }));
       } else {
@@ -118,8 +119,21 @@ export class SkyloomService {
     return { ideas: r.ideas, video: { durationSec: r.durationSec, aspect: r.aspect, resolution: r.resolution }, expandWithText: r.expandWithText };
   }
 
+  /** Video providers whose preset cannot do this clip length would fail every item; say so up front instead. */
+  async #durationProblem(r: BatchRequest): Promise<string | undefined> {
+    const video = (await this.#o.config.load()).filter((c) => c.kind === 'fal-video');
+    if (video.length === 0) return undefined;
+    const ok = video.some((c) => {
+      const pr = c.preset ? falPreset(c.preset) : undefined;
+      return !pr || (Number.isInteger(r.durationSec) && r.durationSec >= pr.seconds[0] && r.durationSec <= pr.seconds[1]);
+    });
+    if (ok) return undefined;
+    const ranges = video.map((c) => falPreset(c.preset ?? '')).filter((x) => x !== undefined).map((x) => `${x.label}: ${x.seconds[0]}–${x.seconds[1]} giây`).join('; ');
+    return `Độ dài ${r.durationSec} giây không được nhà cung cấp video đã thêm hỗ trợ (${ranges}).`;
+  }
+
   async estimate(r: BatchRequest): Promise<EstimateResult> {
-    const bad = validateBatch(r);
+    const bad = validateBatch(r) ?? (await this.#durationProblem(r));
     if (bad) return { ok: false, error: bad };
     try {
       const e = estimateBatch(await this.#registry(), this.#spec(r));
@@ -132,7 +146,8 @@ export class SkyloomService {
 
   async run(r: BatchRequest): Promise<BatchOutcome | { error: string }> {
     const bad = validateBatch(r);
-    if (bad) return { error: bad };
+    const bad2 = bad ?? (await this.#durationProblem(r));
+    if (bad2) return { error: bad2 };
     if (this.#abort) return { error: 'Đang có một lô chạy. Hãy chờ hoặc huỷ trước.' };
     const registry = await this.#registry();
     const budget = new Budget(usd(r.budgetUsd));

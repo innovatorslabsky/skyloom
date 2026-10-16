@@ -2,6 +2,7 @@ import { pollUntilDone } from '../poll.ts';
 import type { PollState } from '../poll.ts';
 import type { Sleep } from '../sync.ts';
 import { ProviderError } from '../types.ts';
+import { falPreset, presetInput } from './falPresets.ts';
 import type { Call, MicroUsd, Output, Provider, VideoCall } from '../types.ts';
 import { usd } from '../types.ts';
 
@@ -16,6 +17,8 @@ export interface FalVideoConfig {
   usdPerSecond: number;
   /** Default https://queue.fal.run */
   baseUrl?: string;
+  /** Id of a built-in model preset (see FAL_PRESETS) that decides the request shape. */
+  preset?: string;
   /** Request body for this model. Parameter names differ per model, so override this when the default does not fit. */
   buildInput?: (call: VideoCall) => Record<string, unknown>;
   /** Extra body fields merged over the default request (e.g. a model's own parameters). Ignored when `buildInput` is set. */
@@ -56,7 +59,10 @@ export function falVideo(c: FalVideoConfig): Provider {
   const base = (c.baseUrl ?? 'https://queue.fal.run').replace(/\/$/, '');
   const origin = new URL(base).origin;
   const headers = { 'content-type': 'application/json', authorization: `Key ${c.apiKey}` };
-  const build = c.buildInput ?? ((v: VideoCall) => ({ ...defaultInput(v), ...c.extraInput }));
+  const preset = c.preset ? falPreset(c.preset) : undefined;
+  if (c.preset && !preset) throw new Error(`Unknown fal preset "${c.preset}".`);
+  const base0 = (v: VideoCall) => (preset ? presetInput(preset, v) : defaultInput(v));
+  const build = c.buildInput ?? ((v: VideoCall) => ({ ...base0(v), ...c.extraInput }));
   const extract = c.extractUrl ?? defaultExtract;
 
   async function http(url: string, init: RequestInit, signal: AbortSignal): Promise<unknown> {

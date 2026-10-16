@@ -93,3 +93,29 @@ describe('falVideo', () => {
     expect(s.log.some((r) => r.method === 'PUT' && r.url.endsWith('/cancel'))).toBe(true);
   });
 });
+
+describe('fal presets', () => {
+  it('kling sends duration as a string and no resolution; wan sends a number and a resolution', async () => {
+    const s = await serve(queue(['COMPLETED']));
+    await mk(s.origin, { preset: 'kling-v3-standard' }).run(video, new AbortController().signal);
+    expect(s.log[0]!.body).toEqual({ prompt: 'a cat', duration: '5', aspect_ratio: '9:16' });
+    await mk(s.origin, { preset: 'wan-v2.7' }).run(video, new AbortController().signal);
+    const wan = s.log.find((r, i) => r.method === 'POST' && i > 0)!;
+    expect(wan.body).toEqual({ prompt: 'a cat', duration: 5, aspect_ratio: '9:16', resolution: '720p' });
+  });
+
+  it('rejects an unsupported duration locally and permanently, without calling fal', async () => {
+    const s = await serve(queue(['COMPLETED']));
+    const err = await mk(s.origin, { preset: 'kling-v3-standard' }).run({ ...video, durationSec: 2 }, new AbortController().signal).catch((e) => e);
+    expect(err).toBeInstanceOf(ProviderError);
+    expect(err.retryable).toBe(false);
+    expect(s.log).toHaveLength(0);
+  });
+
+  it('refuses an unknown preset at construction and still lets extraInput win', async () => {
+    expect(() => mk('http://x', { preset: 'nope' })).toThrow(/Unknown fal preset/);
+    const s = await serve(queue(['COMPLETED']));
+    await mk(s.origin, { preset: 'kling-v3-standard', extraInput: { duration: '10' } }).run(video, new AbortController().signal);
+    expect(s.log[0]!.body.duration).toBe('10');
+  });
+});

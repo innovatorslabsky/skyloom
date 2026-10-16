@@ -13,6 +13,8 @@ export interface ProviderConfig {
   usdPerMillionOut?: number;
   /** fal-video: USD per second of video, from the model's page. */
   usdPerSecond?: number;
+  /** fal-video: built-in model preset id (request shape and allowed durations). Empty = generic shape. */
+  preset?: string;
   /** fal-video: extra request fields specific to the model. */
   extraInput?: Record<string, unknown>;
 }

@@ -172,4 +172,14 @@ describe('fal video provider', () => {
     expect(seen[0]!.auth).toBe('Key fal-secret');
     expect(seen[0]!.body).toMatchObject({ prompt: 'núi', duration: 5, seed: 7 });
   });
+
+  it('presets: rejects unknown ids and refuses a clip length the model cannot make, before spending anything', async () => {
+    expect(validateProvider(fal({ preset: 'nope' }))).toMatch(/Mẫu/);
+    const m = memory();
+    const s = new SkyloomService({ keys: m.keyStore, config: m.config });
+    await s.saveProvider(fal({ preset: 'kling-v3-standard' }));
+    expect(await s.estimate(req({ durationSec: 2 }))).toMatchObject({ ok: false, error: expect.stringContaining('3–15') });
+    expect(await s.run(req({ durationSec: 20 }))).toMatchObject({ error: expect.stringContaining('3–15') });
+    expect(await s.estimate(req({ durationSec: 8 }))).toMatchObject({ ok: true });
+  });
 });
