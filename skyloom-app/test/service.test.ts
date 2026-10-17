@@ -134,6 +134,20 @@ describe('fal video provider', () => {
     expect(validateProvider(fal({ extraInput: [] as any }))).toMatch(/JSON/);
   });
 
+  it('a preset with listed prices needs no price; changing the model or enabling Kling audio does', async () => {
+    const { usdPerSecond: _u, ...base } = fal();
+    const wan = { ...base, preset: 'wan-v2.7', model: 'fal-ai/wan/v2.7/text-to-video' };
+    expect(validateProvider(wan)).toBeUndefined();
+    expect(validateProvider({ ...wan, model: 'fal-ai/wan/v2.7/other' })).toMatch(/giá/);
+    const kling = { ...base, preset: 'kling-v3-standard', model: 'fal-ai/kling-video/v3/standard/text-to-video' };
+    expect(validateProvider(kling)).toBeUndefined();
+    expect(validateProvider({ ...kling, extraInput: { generate_audio: true } })).toMatch(/giá/);
+    const m = memory();
+    const s = new SkyloomService({ keys: m.keyStore, config: m.config });
+    await s.saveProvider(wan);
+    expect(await s.estimate(req({ durationSec: 5, resolution: '1080p' }))).toMatchObject({ ok: true, perItem: 750_000 }); // 5 s × $0.15
+  });
+
   it('stores the default address, keeps the key out of config, and shows up as the only video provider', async () => {
     const m = memory();
     const s = new SkyloomService({ keys: m.keyStore, config: m.config, demo: true, demoDelayMs: 1 });

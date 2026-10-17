@@ -1,4 +1,4 @@
-import { Budget, JobQueue, NoProviderError, Registry, estimateBatch, mockProvider, FAL_PRESETS, falPreset, falVideo, geminiOmniVideo, openAiCompatText, runBatch, usd } from 'skyloom-core';
+import { Budget, JobQueue, NoProviderError, Registry, estimateBatch, mockProvider, FAL_PRESETS, falPreset, falVideo, presetCanPrice, geminiOmniVideo, openAiCompatText, runBatch, usd } from 'skyloom-core';
 import type { BatchSpec, QueueEvent } from 'skyloom-core';
 import type { BatchOutcome, BatchRequest, EstimateResult, ItemOutcome, ProviderConfig, ProviderInput } from './shared/api.ts';
 
@@ -50,8 +50,12 @@ export function validateProvider(p: ProviderInput): string | undefined {
   if (omni && p.fixedSeconds !== undefined && p.fixedSeconds <= 0) return 'Số giây tính tiền phải lớn hơn 0.';
   if (fal || omni) {
     // A video call that looks free would defeat the budget cap, so the price must be stated explicitly.
-    if (p.usdPerSecond === undefined) return 'Cần nhập giá mỗi giây của model (xem trang giá của nhà cung cấp).';
-    if (fal && p.preset && !falPreset(p.preset)) return 'Mẫu model không hợp lệ.';
+    const pr = fal && p.preset ? falPreset(p.preset) : undefined;
+    if (fal && p.preset && !pr) return 'Mẫu model không hợp lệ.';
+    // Listed prices only cover the preset's own model with its default options; anything else needs the user's number.
+    if (p.usdPerSecond === undefined && !(pr && presetCanPrice(pr, p.model.trim(), p.extraInput))) {
+      return pr ? 'Với model/tuỳ chọn này mẫu không có giá niêm yết: hãy nhập giá mỗi giây (xem trang model trên fal).' : 'Cần nhập giá mỗi giây của model (xem trang giá của nhà cung cấp).';
+    }
     if (p.extraInput !== undefined && (typeof p.extraInput !== 'object' || p.extraInput === null || Array.isArray(p.extraInput) || JSON.stringify(p.extraInput).length > 4000)) return 'Tham số bổ sung phải là một đối tượng JSON nhỏ.';
   }
   return undefined;
@@ -104,6 +108,7 @@ export class SkyloomService {
       const apiKey = await this.#o.keys.get(c.id);
       if (!apiKey) continue; // a provider without a key is simply unavailable
       const f = this.#o.fetch ? { fetch: this.#o.fetch } : {};
+      try {
       if (c.kind === 'gemini-omni-video') {
         registry.register(geminiOmniVideo({
           id: c.id, label: c.label, apiKey, model: c.model || OMNI_DEFAULT_MODEL, usdPerSecond: c.usdPerSecond ?? 0, baseUrl: c.baseUrl || OMNI_DEFAULT_URL,
@@ -112,13 +117,15 @@ export class SkyloomService {
         }));
       } else if (c.kind === 'fal-video') {
         registry.register(falVideo({
-          id: c.id, label: c.label, apiKey, model: c.model, usdPerSecond: c.usdPerSecond ?? 0, baseUrl: c.baseUrl || FAL_DEFAULT_URL,
+          id: c.id, label: c.label, apiKey, model: c.model, baseUrl: c.baseUrl || FAL_DEFAULT_URL,
+          ...(c.usdPerSecond !== undefined ? { usdPerSecond: c.usdPerSecond } : {}),
           ...(c.extraInput ? { extraInput: c.extraInput } : {}), ...(c.preset ? { preset: c.preset } : {}), ...(c.rpm !== undefined ? { rpm: c.rpm } : {}),
           ...(this.#o.pollIntervalMs !== undefined ? { pollIntervalMs: this.#o.pollIntervalMs } : {}), ...f,
         }));
       } else {
         registry.register(openAiCompatText({ ...c, apiKey, ...f }));
       }
+      } catch { /* a provider whose config can no longer be priced is skipped rather than run with a guessed cost */ }
     }
     if (this.#o.demo) {
       const delay = () => new Promise<void>((r) => setTimeout(r, this.#o.demoDelayMs ?? 400));

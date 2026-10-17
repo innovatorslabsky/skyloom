@@ -14,7 +14,7 @@ export type { OpenAiCompatConfig } from './providers/openaiCompat.ts';
 export { mockProvider } from './providers/mock.ts';
 export { falVideo } from './providers/fal.ts';
 export type { FalVideoConfig } from './providers/fal.ts';
-export { FAL_PRESETS, falPreset, presetInput } from './providers/falPresets.ts';
+export { FAL_PRESETS, falPreset, presetCanPrice, presetInput, presetUsdPerSecond } from './providers/falPresets.ts';
 export type { FalPreset } from './providers/falPresets.ts';
 export { geminiOmniVideo, findVideo } from './providers/geminiOmni.ts';
 export type { GeminiOmniConfig } from './providers/geminiOmni.ts';

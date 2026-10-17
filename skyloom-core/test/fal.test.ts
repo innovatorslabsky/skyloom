@@ -98,7 +98,7 @@ describe('fal presets', () => {
   it('kling sends duration as a string and no resolution; wan sends a number and a resolution', async () => {
     const s = await serve(queue(['COMPLETED']));
     await mk(s.origin, { preset: 'kling-v3-standard' }).run(video, new AbortController().signal);
-    expect(s.log[0]!.body).toEqual({ prompt: 'a cat', duration: '5', aspect_ratio: '9:16' });
+    expect(s.log[0]!.body).toEqual({ generate_audio: false, prompt: 'a cat', duration: '5', aspect_ratio: '9:16' });
     await mk(s.origin, { preset: 'wan-v2.7' }).run(video, new AbortController().signal);
     const wan = s.log.find((r, i) => r.method === 'POST' && i > 0)!;
     expect(wan.body).toEqual({ prompt: 'a cat', duration: 5, aspect_ratio: '9:16', resolution: '720p' });
@@ -117,5 +117,39 @@ describe('fal presets', () => {
     const s = await serve(queue(['COMPLETED']));
     await mk(s.origin, { preset: 'kling-v3-standard', extraInput: { duration: '10' } }).run(video, new AbortController().signal);
     expect(s.log[0]!.body.duration).toBe('10');
+  });
+});
+
+describe('fal listed prices and errors', () => {
+  const noPrice = (extra: object) => falVideo({ id: 'fal', label: 'fal', apiKey: 'k', model: 'x', baseUrl: 'http://x', ...extra } as any);
+  it('uses the listed price when none is given: Kling $0.084/s, Wan $0.10 (720p) or $0.15 (1080p)', () => {
+    const kling = noPrice({ preset: 'kling-v3-standard', model: 'fal-ai/kling-video/v3/standard/text-to-video' });
+    expect(kling.estimate(video)).toBe(usd(5 * 0.084));
+    const wan = noPrice({ preset: 'wan-v2.7', model: 'fal-ai/wan/v2.7/text-to-video' });
+    expect(wan.estimate(video)).toBe(usd(5 * 0.1));
+    expect(wan.estimate({ ...video, resolution: '1080p' })).toBe(usd(5 * 0.15));
+  });
+  it('an explicit price always wins', () => {
+    expect(noPrice({ preset: 'wan-v2.7', model: 'fal-ai/wan/v2.7/text-to-video', usdPerSecond: 0.2 }).estimate(video)).toBe(usd(1));
+  });
+  it('refuses to guess: other model, or audio switched on, needs an explicit price', () => {
+    expect(() => noPrice({ preset: 'kling-v3-standard', model: 'fal-ai/kling-video/v3/pro/text-to-video' })).toThrow(/no price known/);
+    expect(() => noPrice({ preset: 'kling-v3-standard', model: 'fal-ai/kling-video/v3/standard/text-to-video', extraInput: { generate_audio: true } })).toThrow(/no price known/);
+    expect(() => noPrice({})).toThrow(/no price known/);
+  });
+  it('rejects an over-long prompt locally', async () => {
+    const s = await serve(queue(['COMPLETED']));
+    const err = await mk(s.origin, { preset: 'kling-v3-standard' }).run({ ...video, prompt: 'x'.repeat(2501) }, new AbortController().signal).catch((e) => e);
+    expect(err.retryable).toBe(false);
+    expect(s.log).toHaveLength(0);
+  });
+  it('a COMPLETED status carrying an error is a permanent failure, without fetching the result', async () => {
+    const s = await serve((r, origin) => r.method === 'POST'
+      ? { status: 200, body: { request_id: 'r', status_url: `${origin}/m/requests/r/status`, response_url: `${origin}/m/requests/r/response` } }
+      : { status: 200, body: { status: 'COMPLETED', error: 'content policy violation', error_type: 'x' } });
+    const err = await mk(s.origin).run(video, new AbortController().signal).catch((e) => e);
+    expect(err.retryable).toBe(false);
+    expect(err.message).toContain('content policy');
+    expect(s.log.some((r) => r.url.endsWith('/response'))).toBe(false);
   });
 });

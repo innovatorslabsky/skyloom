@@ -126,7 +126,7 @@ async function providersView(secureKeys: boolean, demo: boolean): Promise<HTMLEl
     kind: h('select', {}, h('option', { value: 'openai-compat-text' }, 'Văn bản (chat-completions)'), h('option', { value: 'fal-video' }, 'Video (fal.ai)'), h('option', { value: 'gemini-omni-video' }, 'Video (Gemini Omni)')),
     fixed: h('input', { type: 'number', min: 1, step: 'any', placeholder: 'tuỳ chọn, vd: 10' }),
     preset: h('select', {}, h('option', { value: '' }, 'Tuỳ chỉnh (dạng request chung)'), ...FAL_PRESETS.map((x) => h('option', { value: x.id }, x.label))),
-    usdPerSecond: h('input', { type: 'number', min: 0, step: 'any', placeholder: 'USD cho mỗi giây video' }),
+    usdPerSecond: h('input', { type: 'number', min: 0, step: 'any', placeholder: 'USD/giây (để trống = giá niêm yết của mẫu fal)' }),
     extra: h('textarea', { rows: 3, placeholder: '{"tham_số": "giá trị"} (tuỳ chọn)' }),
     id: h('input', { placeholder: 'vd: nvidia-text' }), label: h('input', { placeholder: 'Tên hiển thị' }),
     baseUrl: h('input', { placeholder: 'https://…/v1 (fal: để trống = mặc định)' }), model: h('input', { placeholder: 'Tên model' }),
@@ -177,7 +177,7 @@ async function providersView(secureKeys: boolean, demo: boolean): Promise<HTMLEl
     h('div', { class: 'card' }, h('h2', {}, 'Thêm nhà cung cấp'),
       h('div', { class: 'grid' }, field('Loại', f.kind), field('Mã', f.id), field('Tên', f.label), field('Địa chỉ API', f.baseUrl, 'Phải là https.'), field('Model', f.model, 'fal: mã endpoint của model, lấy từ trang model.'), field('Khoá API', f.key),
         field('Giới hạn request/phút', f.rpm), field('Giá vào (USD/1M token)', f.pin), field('Giá ra (USD/1M token)', f.pout),
-        field('Mẫu model video', f.preset, 'Mẫu quyết định tên tham số và độ dài hỗ trợ. Chọn mẫu sẽ điền gợi ý vào ô Model.'), field('Số giây tính tiền mỗi clip', f.fixed, 'Chỉ khi model luôn làm clip cùng độ dài: app dùng số này để báo giá và giữ trần ngân sách.'), field('Giá mỗi giây video (USD)', f.usdPerSecond, 'Lấy từ trang giá của model; app dùng số này để báo giá và giữ trần ngân sách.'),
+        field('Mẫu model video', f.preset, 'Mẫu quyết định tên tham số và độ dài hỗ trợ. Chọn mẫu sẽ điền gợi ý vào ô Model.'), field('Số giây tính tiền mỗi clip', f.fixed, 'Chỉ khi model luôn làm clip cùng độ dài: app dùng số này để báo giá và giữ trần ngân sách.'), field('Giá mỗi giây video (USD)', f.usdPerSecond, 'App dùng số này để báo giá và giữ trần ngân sách. Với mẫu fal (Kling v3 Standard tắt âm thanh: $0.084; Wan 2.7: $0.10 ở 720p, $0.15 ở 1080p) có thể để trống để dùng giá niêm yết; nếu đổi model hoặc bật âm thanh thì phải tự nhập.'),
         field('Tham số bổ sung (JSON)', f.extra, 'Tham số riêng của model, gộp vào request. Mặc định app gửi prompt, duration, aspect_ratio, resolution.')),
       h('div', { class: 'row' }, save), msg),
     h('div', { class: 'note' }, list.some((p) => p.kind !== 'openai-compat-text') ? 'Đã có nhà cung cấp video. Tên tham số và dạng kết quả khác nhau theo từng model: hãy chạy thử một lô nhỏ trước. Gemini Omni nhận tỉ lệ (9:16 hoặc 16:9) và độ nét từ lô, nhưng không cho chọn độ dài clip: ô "độ dài" chỉ dùng để báo giá, nên hãy điền "Số giây tính tiền mỗi clip" theo độ dài thực tế bạn thấy.' : demo ? 'Chưa có nhà cung cấp video. Chế độ chạy thử dùng nhà cung cấp giả để bạn xem trọn luồng.' : 'Chưa có nhà cung cấp video nên chưa chạy được lô thật. Hãy thêm một nhà cung cấp loại "Video (fal.ai)" hoặc "Video (Gemini Omni)".'));

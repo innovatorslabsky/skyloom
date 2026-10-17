@@ -2,7 +2,7 @@ import { pollUntilDone } from '../poll.ts';
 import type { PollState } from '../poll.ts';
 import type { Sleep } from '../sync.ts';
 import { ProviderError } from '../types.ts';
-import { falPreset, presetInput } from './falPresets.ts';
+import { falPreset, presetInput, presetUsdPerSecond } from './falPresets.ts';
 import type { Call, MicroUsd, Output, Provider, VideoCall } from '../types.ts';
 import { usd } from '../types.ts';
 
@@ -13,8 +13,11 @@ export interface FalVideoConfig {
   apiKey: string;
   /** fal model endpoint id, e.g. "fal-ai/…/text-to-video". Pick it from the model's page on fal. */
   model: string;
-  /** USD per second of video for this model. Read it from the model's page; prices differ per model and resolution. */
-  usdPerSecond: number;
+  /**
+   * USD per second of video, flat. Optional when `preset` has listed prices for this exact model; give it when you change the model,
+   * switch a price-changing option (e.g. Kling audio), or want your own rate.
+   */
+  usdPerSecond?: number;
   /** Default https://queue.fal.run */
   baseUrl?: string;
   /** Id of a built-in model preset (see FAL_PRESETS) that decides the request shape. */
@@ -61,6 +64,13 @@ export function falVideo(c: FalVideoConfig): Provider {
   const headers = { 'content-type': 'application/json', authorization: `Key ${c.apiKey}` };
   const preset = c.preset ? falPreset(c.preset) : undefined;
   if (c.preset && !preset) throw new Error(`Unknown fal preset "${c.preset}".`);
+  const rate = (v: VideoCall): number => {
+    const r = c.usdPerSecond ?? (preset ? presetUsdPerSecond(preset, c.model, c.extraInput, v.resolution) : undefined);
+    if (r === undefined) throw new Error(`${c.id}: no price known. Enter the USD per second for ${c.model}.`);
+    return r;
+  };
+  // Fail at construction, not mid-batch, when a price cannot be determined for either resolution the app offers.
+  if (c.usdPerSecond === undefined) for (const resolution of ['720p', '1080p'] as const) rate({ kind: 'video', prompt: '', durationSec: 1, aspect: '16:9', resolution });
   const base0 = (v: VideoCall) => (preset ? presetInput(preset, v) : defaultInput(v));
   const build = c.buildInput ?? ((v: VideoCall) => ({ ...base0(v), ...c.extraInput }));
   const extract = c.extractUrl ?? defaultExtract;
@@ -91,7 +101,7 @@ export function falVideo(c: FalVideoConfig): Provider {
     ...(c.rpm !== undefined ? { rpm: c.rpm } : {}),
     maxConcurrent: c.maxConcurrent ?? 2,
     estimate(call: Call): MicroUsd {
-      return call.kind === 'video' ? usd(call.durationSec * c.usdPerSecond) : 0;
+      return call.kind === 'video' ? usd(call.durationSec * rate(call)) : 0;
     },
     async run(call: Call, signal: AbortSignal): Promise<Output> {
       if (call.kind !== 'video') throw new ProviderError(`${c.id} only serves video.`, { retryable: false });
@@ -103,8 +113,12 @@ export function falVideo(c: FalVideoConfig): Provider {
       const { status_url: statusUrl, response_url: responseUrl } = sub as { status_url: string; response_url: string };
       try {
         await pollUntilDone<true>(async (): Promise<PollState<true>> => {
-          const s = (await http(statusUrl, { method: 'GET' }, signal)) as { status?: string };
-          if (s.status === 'COMPLETED') return { done: true, value: true };
+          const s = (await http(statusUrl, { method: 'GET' }, signal)) as { status?: string; error?: unknown };
+          if (s.status === 'COMPLETED') {
+            // fal marks a failed request COMPLETED with an `error` field; fetching the result would only produce a confusing HTTP error.
+            if (typeof s.error === 'string' && s.error) return { done: true, error: `${c.id}: ${s.error.slice(0, 200)}` };
+            return { done: true, value: true };
+          }
           return { done: false }; // IN_QUEUE / IN_PROGRESS
         }, { intervalMs: c.pollIntervalMs ?? 3000, timeoutMs: c.timeoutMs ?? 10 * 60_000, signal, ...(c.sleep ? { sleep: c.sleep } : {}) });
       } catch (e) {

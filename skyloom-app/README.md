@@ -27,5 +27,7 @@ npm test && npm run typecheck
 
 ## Chưa có
 
-- **Nhà cung cấp video fal.ai đã nối vào app nhưng chưa thử với fal thật.** Thêm ở tab "Nhà cung cấp", loại "Video (fal.ai)": nhập mã endpoint của model, khoá và giá mỗi giây (lấy từ trang model). Tên tham số mặc định (`prompt`, `duration`, `aspect_ratio`, `resolution`) và trường kết quả (`video.url`) chưa kiểm chứng với từng model; dùng "Tham số bổ sung (JSON)" để chỉnh, và chạy thử một lô nhỏ trước. Cũng có loại "Video (Gemini Omni)" (xem `docs/gemini-omni-adapter-notes.md`): chưa chạy với API thật, độ dài/tỉ lệ của lô chưa được gửi đi.
+- **Nhà cung cấp video (fal.ai, Gemini Omni) đã nối vào app nhưng chưa chạy với khoá thật.** Thêm ở tab "Nhà cung cấp".
+  - fal.ai: có mẫu Kling v3 Standard và Wan 2.7, dựng theo schema và giá niêm yết ngày 17/10/2026 trên trang model của fal. Giá mẫu chỉ áp dụng khi dùng đúng model của mẫu và Kling tắt âm thanh (mặc định app tắt); đổi model hoặc bật âm thanh thì phải tự nhập giá.
+  - Gemini Omni: xem `docs/gemini-omni-adapter-notes.md`. Không chọn được độ dài clip; chỉ hỗ trợ 9:16 và 16:9.
 - Chưa thử trên Windows/macOS, chưa đóng gói bộ cài (electron-builder), chưa có lịch sử lô, chưa tải file media về máy.

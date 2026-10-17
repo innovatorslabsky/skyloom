@@ -1,32 +1,26 @@
 # Gemini Omni (Veo replacement) — adapter notes
 
-Status: **implemented, not run against the live API.** `skyloom-core/src/providers/geminiOmni.ts`.
+Source: https://ai.google.dev/gemini-api/docs/omni, read on 2026-10-17. Implemented in `skyloom-core/src/providers/geminiOmni.ts`.
+**Still not run against the live API with a real key.**
 
-Verified from the REST example the owner pasted from the official page:
-`POST https://generativelanguage.googleapis.com/v1beta/interactions`, JSON body `{ "model": "gemini-omni-1.1-flash", "input": "<prompt>" }`.
-Everything else below is unverified (the session could not reach ai.google.dev).
+## Confirmed by the official page
+- `POST https://generativelanguage.googleapis.com/v1beta/interactions`, body `{ "model": "gemini-omni-1.1-flash", "input": "<prompt>" }`.
+  The page's own REST examples also use the `x-goog-api-key` header, which is what we send (not `?key=`).
+- `response_format`: `{ "type": "video", "aspect_ratio": "9:16" | "16:9", "resolution": "360p" | "720p" | "1080p" | "4k", "delivery": "uri" }`.
+  Only 9:16 and 16:9 are documented (the app refuses 1:1 for Omni). 1080p and 4k are upscaled. Default is landscape 720p.
+- **There is no duration parameter.** The model makes its own shots ("a few different shots" by default; "single continuous shot" in the prompt keeps it to one).
+  So the batch's "clip length" is only used to price the clip; set the provider's "billed seconds per clip" to what you actually see.
+- Response (REST): `steps[]` → item `{ "type": "model_output", "content": [{ "type": "video", "mime_type": "video/mp4", "data": "<base64>" }] }`, `status: "completed"`.
+- Inline base64 is limited to about 4 MB; for larger videos use `delivery: "uri"`. The response then carries
+  `uri: "https://generativelanguage.googleapis.com/v1beta/files/<id>:download?alt=media"`; poll `GET /v1beta/files/<id>` until `state` is `ACTIVE`
+  (`FAILED` = give up), then download. The adapter does this, sending the key on both calls and only to the configured host.
+- Google recommends `background:false, store:false, stream:false` for synchronous generation; the adapter sends them. (`store:false` means the clip can't be edited in a later turn; we never do.)
+- Not supported: system instructions, temperature, top_p, negative prompts (put negatives in the prompt). All output carries SynthID.
 
-Implementation choices that follow from that:
-- Key goes in the `x-goog-api-key` header, not the `?key=` query the example shows, so it cannot end up in logs or error text. (If the header is rejected, that is the first thing to check.)
-- The response layout is unknown, so `findVideo` searches the whole JSON for an item with a `video/*` mime type and either base64 `data` or a `uri`/`url`.
-- Duration, aspect ratio and resolution are NOT sent: the example has none and the field names are unverified. Put them in the provider's "extra parameters" JSON if the docs show them (same for every clip in a batch).
-- `fixedSeconds` makes the estimate and budget use a fixed clip length, for models that ignore the requested duration.
-- Inline video is saved by the desktop shell to `videos/NNN.<ext>`; a `uri` result goes through the normal https downloader (which sends no API key, so a URI that needs one will fail with a per-item error).
+## Not on that page (so not hard-coded)
+- Price. Third-party sources say about $0.10 per second of 720p video ($17.50 per 1M video output tokens); the user enters the rate from Google's pricing page.
+- Rate limits for this model.
 
-## Why this, not Veo
-Google's Gemini API deprecations page (read via search summary only) lists `veo-3.1-lite-generate-preview`, `veo-3.1-generate-preview` and
-`veo-3.1-fast-generate-preview` shutting down **22 Oct 2026**, replaced by `gemini-omni-1.1-flash`. One source says the date is a floor, not a
-fixed day. Veo on Vertex AI (`veo-3.1-generate-001`) is reported as unaffected (unverified).
-
-## What third-party sources say (all unverified, some conflicting)
-- Not a long-running operation like Veo (`:predictLongRunning`). It is `POST /v1beta/interactions` with `model` and `input`.
-- Output options go in a `response_format` object (aspect ratio, resolution, duration). Duration reported as 3–10 s (one source says 10 s fixed).
-- Video returns inside `steps[]` as a content item with `mime_type: video/mp4` and **base64 `data`**; a URI delivery mode is mentioned but its field name is not documented anywhere found.
-- Price about $0.10 per second of 720p video ($17.50 per 1M video output tokens); a 360p draft price of ~$0.03/s appears in one source only.
-- Model id conflict: `gemini-omni-flash-preview` (older preview) vs `gemini-omni-1.1-flash` (stable).
-
-## Still to verify with a real call
-1. Exact auth header and request body (read the REST tab of https://ai.google.dev/gemini-api/docs/omni).
-2. Inline-base64 output means `Output.media.bytes`; the app currently only saves `media.url`, so `downloadBatch` needs a bytes path (write file directly, same size cap).
-3. Whether a URI mode exists, and whether it needs the API key to fetch.
-4. A preset-style duration/aspect table like `falPresets.ts`; price entered by the user, not hard-coded.
+## Veo
+The Veo 3.1 preview models are listed on Google's deprecations page for shutdown on 22 Oct 2026 (replacement `gemini-omni-1.1-flash`).
+No Veo adapter is planned.
