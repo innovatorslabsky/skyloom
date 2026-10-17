@@ -16,3 +16,5 @@ export { falVideo } from './providers/fal.ts';
 export type { FalVideoConfig } from './providers/fal.ts';
 export { FAL_PRESETS, falPreset, presetInput } from './providers/falPresets.ts';
 export type { FalPreset } from './providers/falPresets.ts';
+export { geminiOmniVideo, findVideo } from './providers/geminiOmni.ts';
+export type { GeminiOmniConfig } from './providers/geminiOmni.ts';

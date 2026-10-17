@@ -1,5 +1,5 @@
 import { createWriteStream } from 'node:fs';
-import { mkdir, rename, rm } from 'node:fs/promises';
+import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -64,11 +64,23 @@ export async function downloadVideo(url: string, destNoExt: string, o: DownloadO
   return dest;
 }
 
+/** Save a video that arrived inline as bytes. Same size cap and naming as downloads; returns the path relative to the batch folder. */
+export async function saveVideoBytes(dir: string, index: number, bytes: Uint8Array, mime: string, maxBytes = 1024 ** 3): Promise<string> {
+  if (bytes.length > maxBytes) throw new Error('Video lớn hơn giới hạn cho phép.');
+  const vdir = join(dir, 'videos');
+  await mkdir(vdir, { recursive: true });
+  const rel = `videos/${String(index + 1).padStart(3, '0')}${EXT[mime.toLowerCase()] ?? '.mp4'}`;
+  const part = join(dir, `${rel}.part`);
+  await writeFile(part, bytes, { flag: 'wx' });
+  await rename(part, join(dir, rel));
+  return rel;
+}
+
 /** Save every finished item's video under `<dir>/videos/NN.<ext>`. File names never come from the URL. Failures are recorded per item. */
 export async function downloadBatch(out: BatchOutcome, dir: string, o: DownloadOptions = {}): Promise<BatchOutcome> {
   const vdir = join(dir, 'videos');
   const items: ItemOutcome[] = [...out.items];
-  const todo = items.map((it, i) => ({ it, i })).filter((x) => x.it.ok && x.it.mediaUrl);
+  const todo = items.map((it, i) => ({ it, i })).filter((x) => x.it.ok && x.it.mediaUrl && !x.it.file);
   if (todo.length === 0) return out;
   await mkdir(vdir, { recursive: true });
   let next = 0;

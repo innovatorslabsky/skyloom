@@ -4,7 +4,7 @@ import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { downloadBatch, downloadVideo } from '../electron/download.ts';
+import { downloadBatch, downloadVideo, saveVideoBytes } from '../electron/download.ts';
 import type { BatchOutcome } from '../src/shared/api.ts';
 
 let dir: string;
@@ -71,5 +71,14 @@ describe('downloadBatch', () => {
     const out: BatchOutcome = { spentMicro: 0, cancelled: false, items: [{ idea: 'a', ok: false, error: 'x' }] };
     expect(await downloadBatch(out, dir, opt)).toBe(out);
     expect(await readdir(dir)).toEqual([]);
+  });
+});
+
+describe('saveVideoBytes', () => {
+  it('writes videos/NNN.<ext> atomically and enforces the size cap', async () => {
+    expect(await saveVideoBytes(dir, 2, new TextEncoder().encode('abc'), 'video/webm')).toBe('videos/003.webm');
+    expect(await readFile(join(dir, 'videos/003.webm'), 'utf8')).toBe('abc');
+    expect(await readdir(join(dir, 'videos'))).toEqual(['003.webm']);
+    await expect(saveVideoBytes(dir, 0, new Uint8Array(10), 'video/mp4', 5)).rejects.toThrow(/giới hạn/);
   });
 });

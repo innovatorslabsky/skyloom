@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { SkyloomService } from '../src/service.ts';
 import type { AppInfo, BatchOutcome, BatchRequest, ProviderInput } from '../src/shared/api.ts';
-import { downloadBatch } from './download.ts';
+import { downloadBatch, saveVideoBytes } from './download.ts';
 import { encryptedKeyStore, jsonConfigStore } from './stores.ts';
 import type { Cipher } from './stores.ts';
 
@@ -28,10 +28,10 @@ function wire(): void {
   ipcMain.handle('providers:remove', (_e, id: string) => service.removeProvider(String(id)));
   ipcMain.handle('batch:estimate', (_e, r: BatchRequest) => service.estimate(r));
   ipcMain.handle('batch:run', async (_e, r: BatchRequest) => {
-    const out = await service.run(r);
-    if ('error' in out) return out;
     const dir = join(app.getPath('documents'), 'Skyloom', new Date().toISOString().replace(/[:.]/g, '-'));
     await mkdir(dir, { recursive: true });
+    const out = await service.run(r, (i, bytes, mime) => saveVideoBytes(dir, i, bytes, mime));
+    if ('error' in out) return out;
     const saved = await downloadBatch(out, dir);
     await writeManifest(r, saved, dir);
     return { ...saved, outputDir: dir };

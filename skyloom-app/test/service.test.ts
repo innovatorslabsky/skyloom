@@ -183,3 +183,54 @@ describe('fal video provider', () => {
     expect(await s.estimate(req({ durationSec: 8 }))).toMatchObject({ ok: true });
   });
 });
+
+describe('gemini omni video provider', () => {
+  const omni = (over: Partial<ProviderInput> = {}): ProviderInput => ({ id: 'omni', label: 'Omni', kind: 'gemini-omni-video', baseUrl: '', model: '', usdPerSecond: 0.1, apiKey: 'g-secret', ...over });
+  let close: (() => Promise<void>) | undefined;
+  afterEach(async () => { await close?.(); close = undefined; });
+
+  it('validates and stores defaults: no model needed, price required, fixedSeconds positive', async () => {
+    expect(validateProvider(omni())).toBeUndefined();
+    const { usdPerSecond: _u, ...noPrice } = omni();
+    expect(validateProvider(noPrice)).toMatch(/giá mỗi giây/);
+    expect(validateProvider(omni({ fixedSeconds: 0 }))).toMatch(/lớn hơn 0/);
+    const m = memory();
+    const s = new SkyloomService({ keys: m.keyStore, config: m.config });
+    expect((await s.saveProvider(omni())).ok).toBe(true);
+    expect(m.cfg[0]).toMatchObject({ baseUrl: 'https://generativelanguage.googleapis.com', model: 'gemini-omni-1.1-flash' });
+    expect(JSON.stringify(m.cfg)).not.toContain('g-secret');
+  });
+
+  it('runs a batch, hands inline video bytes to the saver, bills fixedSeconds', async () => {
+    const server = createServer((rq, rs) => {
+      rq.resume();
+      rq.on('end', () => {
+        rs.setHeader('content-type', 'application/json');
+        rs.end(JSON.stringify({ steps: [{ content: [{ type: 'video', mime_type: 'video/mp4', data: Buffer.from('VID').toString('base64') }] }] }));
+      });
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    close = () => new Promise((r) => server.close(() => r()));
+    const m = memory();
+    const s = new SkyloomService({ keys: m.keyStore, config: m.config, retryBaseMs: 1 });
+    await s.saveProvider(omni({ baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, fixedSeconds: 10 }));
+    const saved: Array<[number, string, string]> = [];
+    const out = await s.run(req({ ideas: ['a', 'b'], durationSec: 5 }), async (i, bytes, mime) => { saved.push([i, Buffer.from(bytes).toString(), mime]); return `videos/00${i + 1}.mp4`; });
+    if ('error' in out) throw new Error(out.error);
+    expect(saved.sort()).toEqual([[0, 'VID', 'video/mp4'], [1, 'VID', 'video/mp4']]);
+    expect(out.items.map((i) => i.file)).toEqual(['videos/001.mp4', 'videos/002.mp4']);
+    expect(out.spentMicro).toBe(2_000_000); // 2 clips × 10 s × $0.10
+  });
+
+  it('says so when a video arrives inline but there is nowhere to save it', async () => {
+    const server = createServer((rq, rs) => { rq.resume(); rq.on('end', () => { rs.setHeader('content-type', 'application/json'); rs.end(JSON.stringify({ x: { mime_type: 'video/mp4', data: 'VklE' } })); }); });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    close = () => new Promise((r) => server.close(() => r()));
+    const m = memory();
+    const s = new SkyloomService({ keys: m.keyStore, config: m.config, retryBaseMs: 1 });
+    await s.saveProvider(omni({ baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}` }));
+    const out = await s.run(req({ ideas: ['a'] }));
+    if ('error' in out) throw new Error(out.error);
+    expect(out.items[0]).toMatchObject({ ok: true, downloadError: expect.stringContaining('không có nơi lưu') });
+  });
+});

@@ -27,5 +27,5 @@ npm test && npm run typecheck
 
 ## Chưa có
 
-- **Nhà cung cấp video fal.ai đã nối vào app nhưng chưa thử với fal thật.** Thêm ở tab "Nhà cung cấp", loại "Video (fal.ai)": nhập mã endpoint của model, khoá và giá mỗi giây (lấy từ trang model). Tên tham số mặc định (`prompt`, `duration`, `aspect_ratio`, `resolution`) và trường kết quả (`video.url`) chưa kiểm chứng với từng model; dùng "Tham số bổ sung (JSON)" để chỉnh, và chạy thử một lô nhỏ trước. Chưa có nhà cung cấp video khác (Veo, v.v.).
+- **Nhà cung cấp video fal.ai đã nối vào app nhưng chưa thử với fal thật.** Thêm ở tab "Nhà cung cấp", loại "Video (fal.ai)": nhập mã endpoint của model, khoá và giá mỗi giây (lấy từ trang model). Tên tham số mặc định (`prompt`, `duration`, `aspect_ratio`, `resolution`) và trường kết quả (`video.url`) chưa kiểm chứng với từng model; dùng "Tham số bổ sung (JSON)" để chỉnh, và chạy thử một lô nhỏ trước. Cũng có loại "Video (Gemini Omni)" (xem `docs/gemini-omni-adapter-notes.md`): chưa chạy với API thật, độ dài/tỉ lệ của lô chưa được gửi đi.
 - Chưa thử trên Windows/macOS, chưa đóng gói bộ cài (electron-builder), chưa có lịch sử lô, chưa tải file media về máy.
