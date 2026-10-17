@@ -47,3 +47,4 @@ td, th { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line
 [hidden] { display: none !important; }
 .mt10 { margin-top: 10px; }
 .mt12 { margin-top: 12px; }
+.filebtn { cursor: pointer; width: auto; margin: 0; color: var(--ink); }

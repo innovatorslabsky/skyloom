@@ -1,4 +1,5 @@
 import { FAL_PRESETS } from 'skyloom-core';
+import { MAX_IDEAS_FILE_BYTES, parseIdeasFile } from './ideas.ts';
 import type { QueueEvent } from 'skyloom-core';
 import { createDemoApi } from './demoApi.ts';
 import type { BatchOutcome, BatchRequest, ProviderInput, SkyloomApi } from './shared/api.ts';
@@ -41,6 +42,20 @@ async function render(): Promise<void> {
 
 async function batchView(): Promise<HTMLElement> {
   const ideas = h('textarea', { placeholder: 'Mỗi dòng một ý tưởng, ví dụ:\nSóng biển lúc hoàng hôn, quay chậm\nMở hộp sản phẩm, máy quay từ trên xuống', 'aria-label': 'Danh sách ý tưởng' });
+  const fileNote = h('div', { class: 'hint', 'aria-live': 'polite' });
+  const fileInput = h('input', { type: 'file', accept: '.txt,.csv,text/plain,text/csv', hidden: true });
+  /** Add the ideas from a dropped/picked .txt or .csv to the box (existing text is kept). */
+  const importFile = async (file: File | undefined): Promise<void> => {
+    if (!file) return;
+    if (!/\.(txt|csv)$/i.test(file.name)) { fileNote.textContent = 'Chỉ nhận file .txt hoặc .csv.'; return; }
+    if (file.size > MAX_IDEAS_FILE_BYTES) { fileNote.textContent = 'File lớn hơn 1 MB.'; return; }
+    const r = parseIdeasFile(file.name, await file.text());
+    if (r.ideas.length > 0) ideas.value = [ideas.value.trimEnd(), ...r.ideas].filter(Boolean).join('\n');
+    fileNote.textContent = [`Đã thêm ${r.ideas.length} ý tưởng từ ${file.name}.`, ...r.notes].join(' ');
+  };
+  fileInput.addEventListener('change', () => { void importFile(fileInput.files?.[0]); fileInput.value = ''; });
+  ideas.addEventListener('dragover', (e) => e.preventDefault());
+  ideas.addEventListener('drop', (e) => { e.preventDefault(); void importFile(e.dataTransfer?.files[0]); });
   const dur = h('input', { type: 'number', min: 1, max: 120, value: 8 });
   const aspect = h('select', {}, ...['9:16', '16:9', '1:1'].map((a) => h('option', { value: a }, a)));
   const res = h('select', {}, h('option', { value: '720p' }, '720p'), h('option', { value: '1080p' }, '1080p'));
@@ -111,6 +126,7 @@ async function batchView(): Promise<HTMLElement> {
 
   return h('div', {},
     h('div', { class: 'card' }, h('h2', {}, 'Ý tưởng'), ideas,
+      h('div', { class: 'row' }, h('label', { class: 'btn ghost filebtn' }, 'Nhập từ file .txt / .csv', fileInput), fileNote),
       h('div', { class: 'grid mt12' },
         field('Độ dài (giây)', dur), field('Tỉ lệ', aspect), field('Độ nét', res),
         field('Ngân sách tối đa (USD)', budget, 'Dừng cứng khi chạm trần.'), field('Chọn nhà cung cấp', strategy)),
