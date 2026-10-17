@@ -107,7 +107,8 @@ export class SkyloomService {
       if (c.kind === 'gemini-omni-video') {
         registry.register(geminiOmniVideo({
           id: c.id, label: c.label, apiKey, model: c.model || OMNI_DEFAULT_MODEL, usdPerSecond: c.usdPerSecond ?? 0, baseUrl: c.baseUrl || OMNI_DEFAULT_URL,
-          ...(c.fixedSeconds !== undefined ? { fixedSeconds: c.fixedSeconds } : {}), ...(c.extraInput ? { extraBody: c.extraInput } : {}), ...(c.rpm !== undefined ? { rpm: c.rpm } : {}), ...f,
+          ...(c.fixedSeconds !== undefined ? { fixedSeconds: c.fixedSeconds } : {}), ...(c.extraInput ? { extraBody: c.extraInput } : {}), ...(c.rpm !== undefined ? { rpm: c.rpm } : {}),
+          ...(this.#o.pollIntervalMs !== undefined ? { pollIntervalMs: this.#o.pollIntervalMs } : {}), ...f,
         }));
       } else if (c.kind === 'fal-video') {
         registry.register(falVideo({
@@ -132,7 +133,10 @@ export class SkyloomService {
 
   /** Video providers whose preset cannot do this clip length would fail every item; say so up front instead. */
   async #durationProblem(r: BatchRequest): Promise<string | undefined> {
-    const video = (await this.#o.config.load()).filter((c) => c.kind === 'fal-video');
+    const all = (await this.#o.config.load()).filter((c) => c.kind !== 'openai-compat-text');
+    // Google documents only 9:16 and 16:9 for Omni, so a 1:1 batch could never succeed with Omni alone.
+    if (all.length > 0 && all.every((c) => c.kind === 'gemini-omni-video') && r.aspect === '1:1') return 'Gemini Omni chỉ hỗ trợ tỉ lệ 9:16 và 16:9.';
+    const video = all.filter((c) => c.kind === 'fal-video');
     if (video.length === 0) return undefined;
     const ok = video.some((c) => {
       const pr = c.preset ? falPreset(c.preset) : undefined;

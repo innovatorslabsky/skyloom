@@ -222,6 +222,13 @@ describe('gemini omni video provider', () => {
     expect(out.spentMicro).toBe(2_000_000); // 2 clips × 10 s × $0.10
   });
 
+  it('refuses 1:1 when Omni is the only video provider', async () => {
+    const m = memory();
+    const s = new SkyloomService({ keys: m.keyStore, config: m.config });
+    await s.saveProvider(omni());
+    expect(await s.estimate(req({ aspect: '1:1' }))).toMatchObject({ ok: false, error: expect.stringContaining('9:16') });
+  });
+
   it('says so when a video arrives inline but there is nowhere to save it', async () => {
     const server = createServer((rq, rs) => { rq.resume(); rq.on('end', () => { rs.setHeader('content-type', 'application/json'); rs.end(JSON.stringify({ x: { mime_type: 'video/mp4', data: 'VklE' } })); }); });
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));

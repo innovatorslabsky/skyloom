@@ -1,3 +1,6 @@
+import { pollUntilDone } from '../poll.ts';
+import type { PollState } from '../poll.ts';
+import type { Sleep } from '../sync.ts';
 import { ProviderError, usd } from '../types.ts';
 import type { Call, MicroUsd, Output, Provider } from '../types.ts';
 
@@ -15,8 +18,15 @@ export interface GeminiOmniConfig {
    * When set, estimates use this instead of the requested duration so the budget cap stays honest.
    */
   fixedSeconds?: number;
-  /** Merged into the request body next to `model` and `input`, e.g. `{ response_format: {...} }`. Same for every clip in a batch. */
+  /**
+   * How the finished video comes back. "uri" (default) returns a Google-hosted file that this provider polls until ACTIVE and then downloads
+   * with the key; Google recommends it for videos over 4 MB. "inline" returns base64 in the response (4 MB payload limit).
+   */
+  delivery?: 'uri' | 'inline';
+  /** Merged over the default request body (but never over `model` and `input`), e.g. `{ response_format: { resolution: "360p" } }`. */
   extraBody?: Record<string, unknown>;
+  pollIntervalMs?: number;
+  sleep?: Sleep;
   /** Default https://generativelanguage.googleapis.com */
   baseUrl?: string;
   rpm?: number;
@@ -46,6 +56,9 @@ export function findVideo(node: unknown, depth = 0): Found | undefined {
   return undefined;
 }
 
+/** Google documents 9:16 and 16:9 only. */
+const ASPECTS = new Set(['9:16', '16:9']);
+
 function decodeBase64(s: string): Uint8Array {
   if (typeof Buffer !== 'undefined') return Buffer.from(s, 'base64');
   const bin = atob(s);
@@ -71,25 +84,51 @@ export function geminiOmniVideo(c: GeminiOmniConfig): Provider {
     },
     async run(call: Call, signal: AbortSignal): Promise<Output> {
       if (call.kind !== 'video') throw new ProviderError(`${c.id} only serves video.`, { retryable: false });
+      if (!ASPECTS.has(call.aspect)) throw new ProviderError(`${c.id} supports only 9:16 and 16:9, got ${call.aspect}.`, { retryable: false });
       const sig = AbortSignal.any([signal, AbortSignal.timeout(c.timeoutMs ?? 10 * 60_000)]);
-      let res: Response;
-      try {
-        res = await f(`${base}/v1beta/interactions`, {
-          method: 'POST',
-          signal: sig,
-          headers: { 'content-type': 'application/json', 'x-goog-api-key': c.apiKey },
-          body: JSON.stringify({ ...c.extraBody, model, input: call.prompt }),
-        });
-      } catch (e) {
-        if (signal.aborted) throw e;
-        throw new ProviderError(`Network error calling ${c.id}.`, { retryable: true, cause: e });
-      }
-      if (!res.ok) {
-        const hint = (await res.text().catch(() => '')).slice(0, 200);
-        throw new ProviderError(`${c.id} returned HTTP ${res.status}: ${hint}`, { retryable: res.status === 429 || res.status === 408 || res.status >= 500, status: res.status });
-      }
-      const len = Number(res.headers.get('content-length'));
-      if (Number.isFinite(len) && len > maxBytes) { await res.body?.cancel(); throw new ProviderError(`${c.id} response is larger than the allowed size.`, { retryable: false }); }
+      const delivery = c.delivery ?? 'uri';
+      const headers = { 'content-type': 'application/json', 'x-goog-api-key': c.apiKey };
+      const http = async (url: string, init: RequestInit): Promise<Response> => {
+        let res: Response;
+        try { res = await f(url, { ...init, signal: sig, headers }); } catch (e) {
+          if (signal.aborted) throw e;
+          throw new ProviderError(`Network error calling ${c.id}.`, { retryable: true, cause: e });
+        }
+        if (!res.ok) {
+          const hint = (await res.text().catch(() => '')).slice(0, 200);
+          throw new ProviderError(`${c.id} returned HTTP ${res.status}: ${hint}`, { retryable: res.status === 429 || res.status === 408 || res.status >= 500, status: res.status });
+        }
+        const len = Number(res.headers.get('content-length'));
+        if (Number.isFinite(len) && len > maxBytes) { await res.body?.cancel(); throw new ProviderError(`${c.id} response is larger than the allowed size.`, { retryable: false }); }
+        return res;
+      };
+      // Synchronous, unstored generation is what Google's docs recommend for speed; we never edit a clip afterwards.
+      const res = await http(`${base}/v1beta/interactions`, {
+        method: 'POST',
+        body: JSON.stringify({
+          background: false, store: false, stream: false,
+          response_format: { type: 'video', aspect_ratio: call.aspect, resolution: call.resolution, ...(delivery === 'uri' ? { delivery: 'uri' } : {}) },
+          ...c.extraBody, model, input: call.prompt,
+        }),
+      });
+      const sameHost = (u: string) => { try { return new URL(u).origin === new URL(base).origin; } catch { return false; } };
+      /** A hosted file: wait until it is ACTIVE, then download it. Both calls carry the key, so they only go to the configured host. */
+      const fetchFile = async (uri: string): Promise<Uint8Array> => {
+        if (!sameHost(uri)) throw new ProviderError(`${c.id} returned a video address on another host; refusing to send the key there.`, { retryable: false });
+        const id = /\/files\/([A-Za-z0-9_-]+)/.exec(uri)?.[1];
+        if (id) {
+          await pollUntilDone<true>(async (): Promise<PollState<true>> => {
+            const info = (await (await http(`${base}/v1beta/files/${id}`, { method: 'GET' })).json().catch(() => ({}))) as { state?: unknown };
+            const st = typeof info.state === 'string' ? info.state : (info.state as { name?: string } | undefined)?.name;
+            if (st === 'ACTIVE') return { done: true, value: true };
+            if (st === 'FAILED') return { done: true, error: `${c.id}: Google reported the video file as FAILED.` };
+            return { done: false };
+          }, { intervalMs: c.pollIntervalMs ?? 5000, timeoutMs: c.timeoutMs ?? 10 * 60_000, signal: sig, ...(c.sleep ? { sleep: c.sleep } : {}) });
+        }
+        const buf = new Uint8Array(await (await http(uri, { method: 'GET' })).arrayBuffer());
+        if (buf.length > maxBytes) throw new ProviderError(`${c.id} video is larger than the allowed size.`, { retryable: false });
+        return buf;
+      };
       let json: unknown;
       try { json = await res.json(); } catch (e) { throw new ProviderError(`${c.id} returned invalid JSON.`, { retryable: true, cause: e }); }
       const v = findVideo(json);
@@ -98,7 +137,7 @@ export function geminiOmniVideo(c: GeminiOmniConfig): Provider {
         const keys = json && typeof json === 'object' ? Object.keys(json).slice(0, 10).join(', ') : typeof json;
         throw new ProviderError(`${c.id} finished without a video (response keys: ${keys}).`, { retryable: false });
       }
-      if (v.url) return { media: { url: v.url, mime: v.mime } };
+      if (v.url) return { media: { bytes: await fetchFile(v.url), mime: v.mime } };
       const bytes = decodeBase64(v.data!);
       if (bytes.length > maxBytes) throw new ProviderError(`${c.id} video is larger than the allowed size.`, { retryable: false });
       return { media: { bytes, mime: v.mime } };
