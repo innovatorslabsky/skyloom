@@ -18,6 +18,8 @@ async function start(over: { password?: string } = {}) {
   await mkdir(join(dir, 'static', 'assets'), { recursive: true });
   await writeFile(join(dir, 'static', 'index.html'), '<!doctype html><html><head><title>S</title></head><body></body></html>');
   await writeFile(join(dir, 'static', 'assets', 'a.js'), 'console.log(1)');
+  await writeFile(join(dir, 'static', 'favicon.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>');
+  await writeFile(join(dir, 'static', 'secret.txt'), 'nope');
   const auth = createAuth({ user: 'owner', passwordHash: await hashPassword(over.password ?? 'correct horse battery'), secret: SECRET, now: () => nowMs });
   const { server } = createWebServer({ dataDir: join(dir, 'data'), staticDir: join(dir, 'static'), auth, secret: SECRET, serviceOptions: { demo: true, demoDelayMs: 1, retryBaseMs: 1 } });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
@@ -42,6 +44,12 @@ describe('auth gate', () => {
     expect((await get('/healthz')).status).toBe(200);
     expect((await get('/login')).status).toBe(200);
     expect((await get('/login.js')).status).toBe(200);
+    const fav = await get('/favicon.svg');
+    expect(fav.status).toBe(200);
+    expect(fav.headers.get('content-type')).toBe('image/svg+xml');
+    expect((await get('/apple-touch-icon.png')).status).toBe(404); // allowed name but absent: clean 404
+    expect((await get('/secret.txt')).status).toBe(401); // other files in the static folder stay behind the login
+    expect((await get('/logo-mark.svg/../secret.txt')).status).toBe(401);
     const home = await get('/');
     expect(home.status).toBe(302);
     expect(home.headers.get('location')).toBe('/login');

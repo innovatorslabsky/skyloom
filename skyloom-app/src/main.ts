@@ -33,7 +33,7 @@ async function render(): Promise<void> {
   root.replaceChildren(
     h('div', { class: 'app' },
       h('header', { class: 'top' },
-        h('span', { class: 'brand' }, 'Skyloom'),
+        h('span', { class: 'brand' }, h('img', { src: './logo-mark.svg', alt: '', class: 'brand-mark' }), 'Skyloom'),
         h('span', { class: `badge${info.mode === 'demo' ? ' warn' : ''}` }, info.mode === 'demo' ? 'Chạy thử' : info.mode === 'web' ? 'Web' : 'Máy tính'),
         h('nav', { class: 'tabs', role: 'tablist' },
           ...(['batch', 'history', 'providers'] as const).map((t) =>

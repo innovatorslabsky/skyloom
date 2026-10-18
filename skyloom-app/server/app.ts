@@ -32,6 +32,8 @@ const MAX_BODY = 2 * 1024 * 1024;
 const COOKIE = 'sky_session';
 const MEDIA_TYPES: Record<string, string> = { '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime', '.jpg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp' };
 const ASSET_TYPES: Record<string, string> = { '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.map': 'application/json' };
+/** Brand files that the login page needs before anyone is signed in. They hold nothing private. */
+const PUBLIC_FILES: Record<string, string> = { '/favicon.svg': 'image/svg+xml', '/favicon.ico': 'image/x-icon', '/apple-touch-icon.png': 'image/png', '/logo-mark.svg': 'image/svg+xml' };
 const CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'";
 
 type Current = { state: 'idle' } | { state: 'running'; startedAt: number } | { state: 'done'; outcome: BatchOutcome } | { state: 'error'; error: string };
@@ -129,6 +131,10 @@ export function createWebServer(o: WebServerOptions): { server: Server; service:
 
     // ---- public
     if (path === '/healthz') return send(req, res, 200, 'ok', 'text/plain');
+    if (method === 'GET' && PUBLIC_FILES[path]) {
+      try { return send(req, res, 200, await readFile(join(o.staticDir, path.slice(1))), PUBLIC_FILES[path]!, { 'cache-control': 'public, max-age=86400' }); }
+      catch { return json(req, res, 404, { error: 'Không tìm thấy.' }); }
+    }
     if (method === 'GET' && path === '/login') return send(req, res, 200, LOGIN_HTML, 'text/html; charset=utf-8');
     if (method === 'GET' && path === '/login.css') return send(req, res, 200, LOGIN_CSS, 'text/css; charset=utf-8', { 'cache-control': 'public, max-age=3600' });
     if (method === 'GET' && path === '/login.js') return send(req, res, 200, LOGIN_JS, 'text/javascript; charset=utf-8', { 'cache-control': 'public, max-age=3600' });

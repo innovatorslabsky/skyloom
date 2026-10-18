@@ -1,5 +1,7 @@
 # Skyloom
 
+<p align="center"><img src="brand/svg/skyloom-logo.svg" alt="Skyloom" width="320"></p>
+
 Điều khiển chi phí khi tạo video AI hàng loạt: báo giá trước, trần ngân sách, đa nhà cung cấp.
 
 - `skyloom-core/` — lõi độc lập nhà cung cấp (hàng đợi, định tuyến, ngân sách, ước tính chi phí)
