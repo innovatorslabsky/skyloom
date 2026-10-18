@@ -23,19 +23,19 @@ function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string, 
 const field = (label: string, input: HTMLElement, hint?: string) => h('div', { class: 'fld' }, h('label', {}, label), input, ...(hint ? [h('div', { class: 'hint' }, hint)] : []));
 
 const root = document.getElementById('app')!;
-let tab: 'batch' | 'providers' = 'batch';
+let tab: 'batch' | 'providers' | 'history' = 'batch';
 
 async function render(): Promise<void> {
   const info = await api.info();
-  const body = tab === 'batch' ? await batchView() : await providersView(info.mode === 'demo' || info.secureKeys, info.mode === 'demo');
+  const body = tab === 'batch' ? await batchView() : tab === 'history' ? await historyView(info.mode === 'demo') : await providersView(info.mode === 'demo' || info.secureKeys, info.mode === 'demo');
   root.replaceChildren(
     h('div', { class: 'app' },
       h('header', { class: 'top' },
         h('span', { class: 'brand' }, 'Skyloom'),
         h('span', { class: `badge${info.mode === 'demo' ? ' warn' : ''}` }, info.mode === 'demo' ? 'Chạy thử' : 'Máy tính'),
         h('nav', { class: 'tabs', role: 'tablist' },
-          ...(['batch', 'providers'] as const).map((t) =>
-            h('button', { role: 'tab', 'aria-selected': tab === t, onclick: () => { tab = t; void render(); } }, t === 'batch' ? 'Tạo lô' : 'Nhà cung cấp')))),
+          ...(['batch', 'history', 'providers'] as const).map((t) =>
+            h('button', { role: 'tab', 'aria-selected': tab === t, onclick: () => { tab = t; void render(); } }, t === 'batch' ? 'Tạo lô' : t === 'history' ? 'Lịch sử' : 'Nhà cung cấp')))),
       ...(info.note ? [h('div', { class: 'note' }, info.note)] : []),
       body));
 }
@@ -133,6 +133,19 @@ async function batchView(): Promise<HTMLElement> {
       h('label', { class: 'check' }, expand, 'Dùng văn bản AI mở rộng mỗi ý tưởng thành mô tả cảnh quay trước'),
       h('div', { class: 'row' }, estBtn, runBtn, cancelBtn), estimateBox),
     h('div', { class: 'card' }, h('h2', {}, 'Tiến độ'), list, summary));
+}
+
+async function historyView(demo: boolean): Promise<HTMLElement> {
+  const runs = await api.listHistory();
+  if (runs.length === 0) return h('div', { class: 'card' }, h('h2', {}, 'Lịch sử'), h('div', { class: 'hint' }, 'Chưa có lô nào. Mỗi lô đã chạy sẽ hiện ở đây.'));
+  return h('div', {}, ...runs.map((r) => h('div', { class: 'card' },
+    h('h2', {}, new Date(r.createdAt).toLocaleString('vi-VN')),
+    h('div', { class: 'hint' }, `${r.okCount}/${r.count} thành công · đã tiêu ${usdText(r.spentMicro)}${r.cancelled ? ' · đã huỷ' : ''}`),
+    h('details', {}, h('summary', {}, 'Chi tiết'),
+      h('ul', { class: 'items' }, ...r.items.map((it) => h('li', {}, h('span', { class: 'idea', title: it.idea }, it.idea),
+        h('span', { class: `st ${it.ok ? 'ok' : 'bad'}` }, it.ok ? `Xong${it.costMicro !== undefined ? ` · ${usdText(it.costMicro)}` : ''}` : 'Lỗi'),
+        h('span', { class: 'sub' }, it.file ?? it.error ?? it.provider ?? ''))))),
+    ...(demo ? [] : [h('div', { class: 'row' }, h('button', { class: 'btn ghost', onclick: () => void api.openHistory(r.id) }, 'Mở thư mục'))]))));
 }
 
 async function providersView(secureKeys: boolean, demo: boolean): Promise<HTMLElement> {

@@ -11,6 +11,8 @@ const api: SkyloomApi = {
   estimate: (r) => ipcRenderer.invoke('batch:estimate', r),
   run: (r) => ipcRenderer.invoke('batch:run', r),
   cancel: () => ipcRenderer.invoke('batch:cancel'),
+  listHistory: () => ipcRenderer.invoke('history:list'),
+  openHistory: (id) => ipcRenderer.invoke('history:open', id),
   onEvent: (cb) => {
     const h = (_: unknown, e: QueueEvent) => cb(e);
     ipcRenderer.on('batch:event', h);

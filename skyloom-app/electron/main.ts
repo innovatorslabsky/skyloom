@@ -4,6 +4,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { SkyloomService } from '../src/service.ts';
 import type { AppInfo, BatchOutcome, BatchRequest, ProviderInput } from '../src/shared/api.ts';
 import { downloadBatch, saveVideoBytes } from './download.ts';
+import { listHistory, runDir } from './history.ts';
 import { encryptedKeyStore, jsonConfigStore } from './stores.ts';
 import type { Cipher } from './stores.ts';
 
@@ -37,6 +38,12 @@ function wire(): void {
     return { ...saved, outputDir: dir };
   });
   ipcMain.handle('batch:cancel', () => service.cancel());
+  const base = () => join(app.getPath('documents'), 'Skyloom');
+  ipcMain.handle('history:list', () => listHistory(base()));
+  ipcMain.handle('history:open', async (_e, id: unknown) => {
+    const dir = runDir(base(), id);
+    if (dir) await shell.openPath(dir);
+  });
 }
 
 function createWindow(): void {

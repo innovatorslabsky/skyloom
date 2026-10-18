@@ -18,6 +18,7 @@ npm test && npm run typecheck
 - Địa chỉ API phải là `https` (chỉ cho `http` với localhost), không chấp nhận tài khoản/mật khẩu trong địa chỉ.
 - Cửa sổ không cho mở popup hay điều hướng đi nơi khác; liên kết `https` mở bằng trình duyệt hệ thống.
 - Ý tưởng nhập bằng cách dán (mỗi dòng một ý) hoặc nhập từ file `.txt` / `.csv` (cột `prompt`/`idea`/`ý tưởng`, nếu không có tiêu đề thì lấy cột đầu), bằng nút "Nhập từ file" hoặc kéo thả vào ô ý tưởng. Giới hạn 1 MB, 500 ý tưởng, 2000 ký tự mỗi ý.
+- Tab "Lịch sử" liệt kê các lô đã chạy (đọc lại từ `batch.json` trong `Documents/Skyloom/`): thời gian, số clip thành công, chi tiêu, chi tiết từng mục, và nút "Mở thư mục". File bị hỏng hoặc quá 5 MB bị bỏ qua.
 - Mỗi lô ghi một bản `batch.json` (yêu cầu + kết quả, không có khoá) vào `Documents/Skyloom/<thời gian>/`.
 
 ## Đã kiểm
