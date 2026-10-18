@@ -56,6 +56,7 @@ async function batchView(): Promise<HTMLElement> {
   fileInput.addEventListener('change', () => { void importFile(fileInput.files?.[0]); fileInput.value = ''; });
   ideas.addEventListener('dragover', (e) => e.preventDefault());
   ideas.addEventListener('drop', (e) => { e.preventDefault(); void importFile(e.dataTransfer?.files[0]); });
+  const mode = h('select', {}, h('option', { value: 'video' }, 'Video'), h('option', { value: 'image' }, 'Ảnh'));
   const dur = h('input', { type: 'number', min: 1, max: 120, value: 8 });
   const aspect = h('select', {}, ...['9:16', '16:9', '1:1'].map((a) => h('option', { value: a }, a)));
   const res = h('select', {}, h('option', { value: '720p' }, '720p'), h('option', { value: '1080p' }, '1080p'));
@@ -70,6 +71,7 @@ async function batchView(): Promise<HTMLElement> {
   const estBtn = h('button', { class: 'btn ghost' }, 'Xem báo giá');
 
   const request = (): BatchRequest => ({
+    mode: (mode as HTMLSelectElement).value as 'video' | 'image',
     ideas: ideas.value.split('\n').map((s) => s.trim()).filter(Boolean),
     durationSec: Number((dur as HTMLInputElement).value), aspect: (aspect as HTMLSelectElement).value as BatchRequest['aspect'],
     resolution: (res as HTMLSelectElement).value as BatchRequest['resolution'], expandWithText: (expand as HTMLInputElement).checked,
@@ -124,15 +126,20 @@ async function batchView(): Promise<HTMLElement> {
     summary.textContent = out.cancelled ? `Đã huỷ. Đã tiêu ${usdText(out.spentMicro)}.` : `${ok}/${out.items.length} thành công. Đã tiêu ${usdText(out.spentMicro)}.${out.outputDir ? ` Đã lưu bản ghi vào ${out.outputDir}` : ''}`;
   }
 
-  return h('div', {},
+  const view = h('div', {},
     h('div', { class: 'card' }, h('h2', {}, 'Ý tưởng'), ideas,
       h('div', { class: 'row' }, h('label', { class: 'btn ghost filebtn' }, 'Nhập từ file .txt / .csv', fileInput), fileNote),
       h('div', { class: 'grid mt12' },
-        field('Độ dài (giây)', dur), field('Tỉ lệ', aspect), field('Độ nét', res),
+        field('Tạo', mode), field('Độ dài (giây)', dur), field('Tỉ lệ', aspect), field('Độ nét', res),
         field('Ngân sách tối đa (USD)', budget, 'Dừng cứng khi chạm trần.'), field('Chọn nhà cung cấp', strategy)),
       h('label', { class: 'check' }, expand, 'Dùng văn bản AI mở rộng mỗi ý tưởng thành mô tả cảnh quay trước'),
       h('div', { class: 'row' }, estBtn, runBtn, cancelBtn), estimateBox),
     h('div', { class: 'card' }, h('h2', {}, 'Tiến độ'), list, summary));
+  // Stills have no duration or resolution, and "expand with text" is only about prompts, so it stays available.
+  const syncMode = () => { const image = (mode as HTMLSelectElement).value === 'image'; for (const el of [dur, res]) el.closest('.fld')!.toggleAttribute('hidden', image); };
+  mode.addEventListener('change', syncMode);
+  syncMode();
+  return view;
 }
 
 async function historyView(demo: boolean): Promise<HTMLElement> {
@@ -152,7 +159,8 @@ async function providersView(secureKeys: boolean, demo: boolean): Promise<HTMLEl
   const list = await api.listProviders();
   const msg = h('div', { class: 'msg', 'aria-live': 'polite' });
   const f = {
-    kind: h('select', {}, h('option', { value: 'openai-compat-text' }, 'Văn bản (chat-completions)'), h('option', { value: 'fal-video' }, 'Video (fal.ai)'), h('option', { value: 'gemini-omni-video' }, 'Video (Gemini Omni)')),
+    kind: h('select', {}, h('option', { value: 'openai-compat-text' }, 'Văn bản (chat-completions)'), h('option', { value: 'fal-video' }, 'Video (fal.ai)'), h('option', { value: 'gemini-omni-video' }, 'Video (Gemini Omni)'), h('option', { value: 'fal-image' }, 'Ảnh (fal.ai)')),
+    pmp: h('input', { type: 'number', min: 0, step: 'any', placeholder: 'USD/megapixel (để trống = giá niêm yết của flux/schnell)' }),
     fixed: h('input', { type: 'number', min: 1, step: 'any', placeholder: 'tuỳ chọn, vd: 10' }),
     preset: h('select', {}, h('option', { value: '' }, 'Tuỳ chỉnh (dạng request chung)'), ...FAL_PRESETS.map((x) => h('option', { value: x.id }, x.label))),
     usdPerSecond: h('input', { type: 'number', min: 0, step: 'any', placeholder: 'USD/giây (để trống = giá niêm yết của mẫu fal)' }),
@@ -166,14 +174,15 @@ async function providersView(secureKeys: boolean, demo: boolean): Promise<HTMLEl
   const num = (el: HTMLInputElement) => (el.value === '' ? undefined : Number(el.value));
   const save = h('button', { class: 'btn' }, 'Lưu nhà cung cấp');
   const textOnly = [f.pin, f.pout];
-  const videoOnly = [f.usdPerSecond, f.extra];
   const syncKind = () => {
-    const video = f.kind.value !== 'openai-compat-text';
-    const fal = f.kind.value === 'fal-video';
-    f.preset.closest('.fld')!.toggleAttribute('hidden', !fal);
-    f.fixed.closest('.fld')!.toggleAttribute('hidden', f.kind.value !== 'gemini-omni-video');
-    for (const el of textOnly) el.closest('.fld')!.toggleAttribute('hidden', video);
-    for (const el of videoOnly) el.closest('.fld')!.toggleAttribute('hidden', !video);
+    const k = f.kind.value;
+    const show = (el: HTMLElement, on: boolean) => el.closest('.fld')!.toggleAttribute('hidden', !on);
+    show(f.preset, k === 'fal-video');
+    show(f.fixed, k === 'gemini-omni-video');
+    show(f.usdPerSecond, k === 'fal-video' || k === 'gemini-omni-video');
+    show(f.pmp, k === 'fal-image');
+    show(f.extra, k !== 'openai-compat-text');
+    for (const el of textOnly) show(el, k === 'openai-compat-text');
   };
   f.kind.addEventListener('change', syncKind);
   f.preset.addEventListener('change', () => {
@@ -185,11 +194,11 @@ async function providersView(secureKeys: boolean, demo: boolean): Promise<HTMLEl
     if (f.kind.value !== 'openai-compat-text' && f.extra.value.trim()) {
       try { extraInput = JSON.parse(f.extra.value) as Record<string, unknown>; } catch { msg.className = 'msg err'; msg.textContent = 'Tham số bổ sung không phải JSON hợp lệ.'; return; }
     }
-    const video = f.kind.value !== 'openai-compat-text';
+    const video = f.kind.value === 'fal-video' || f.kind.value === 'gemini-omni-video';
     const p: ProviderInput = {
       id: f.id.value.trim(), label: f.label.value.trim(), kind: f.kind.value as ProviderInput['kind'], baseUrl: f.baseUrl.value.trim(), model: f.model.value.trim(), apiKey: f.key.value,
-      ...(num(f.rpm) !== undefined ? { rpm: num(f.rpm)! } : {}), ...(!video && num(f.pin) !== undefined ? { usdPerMillionIn: num(f.pin)! } : {}), ...(!video && num(f.pout) !== undefined ? { usdPerMillionOut: num(f.pout)! } : {}),
-      ...(f.kind.value === 'fal-video' && f.preset.value ? { preset: f.preset.value } : {}), ...(f.kind.value === 'gemini-omni-video' && num(f.fixed) !== undefined ? { fixedSeconds: num(f.fixed)! } : {}), ...(video && num(f.usdPerSecond) !== undefined ? { usdPerSecond: num(f.usdPerSecond)! } : {}), ...(extraInput ? { extraInput } : {}),
+      ...(num(f.rpm) !== undefined ? { rpm: num(f.rpm)! } : {}), ...(f.kind.value === 'openai-compat-text' && num(f.pin) !== undefined ? { usdPerMillionIn: num(f.pin)! } : {}), ...(f.kind.value === 'openai-compat-text' && num(f.pout) !== undefined ? { usdPerMillionOut: num(f.pout)! } : {}),
+      ...(f.kind.value === 'fal-video' && f.preset.value ? { preset: f.preset.value } : {}), ...(f.kind.value === 'gemini-omni-video' && num(f.fixed) !== undefined ? { fixedSeconds: num(f.fixed)! } : {}), ...(video && num(f.usdPerSecond) !== undefined ? { usdPerSecond: num(f.usdPerSecond)! } : {}), ...(f.kind.value === 'fal-image' && num(f.pmp) !== undefined ? { usdPerMegapixel: num(f.pmp)! } : {}), ...(extraInput ? { extraInput } : {}),
     };
     const r = await api.saveProvider(p);
     f.key.value = ''; // never keep the key in the page after sending it
@@ -200,13 +209,13 @@ async function providersView(secureKeys: boolean, demo: boolean): Promise<HTMLEl
     ...(secureKeys ? [] : [h('div', { class: 'note' }, 'Máy này chưa có kho khoá an toàn của hệ điều hành, nên ứng dụng sẽ không lưu khoá API.')]),
     h('div', { class: 'card' }, h('h2', {}, 'Nhà cung cấp đã thêm'),
       list.length === 0 ? h('div', { class: 'hint' }, 'Chưa có nhà cung cấp nào.') :
-        h('table', {}, h('tbody', {}, ...list.map((p) => h('tr', {}, h('td', {}, p.label), h('td', {}, p.kind === 'openai-compat-text' ? 'văn bản' : 'video'), h('td', {}, p.model), h('td', {}, p.baseUrl),
+        h('table', {}, h('tbody', {}, ...list.map((p) => h('tr', {}, h('td', {}, p.label), h('td', {}, p.kind === 'openai-compat-text' ? 'văn bản' : p.kind === 'fal-image' ? 'ảnh' : 'video'), h('td', {}, p.model), h('td', {}, p.baseUrl),
           h('td', {}, h('button', { class: 'btn ghost', onclick: async () => { await api.removeProvider(p.id); void render(); } }, 'Xoá')))))),
       h('div', { class: 'hint mt10' }, 'Khoá API được gửi một lần tới tiến trình chính, mã hoá bằng kho khoá hệ điều hành và không bao giờ đọc ngược lại ra giao diện.')),
     h('div', { class: 'card' }, h('h2', {}, 'Thêm nhà cung cấp'),
       h('div', { class: 'grid' }, field('Loại', f.kind), field('Mã', f.id), field('Tên', f.label), field('Địa chỉ API', f.baseUrl, 'Phải là https.'), field('Model', f.model, 'fal: mã endpoint của model, lấy từ trang model.'), field('Khoá API', f.key),
         field('Giới hạn request/phút', f.rpm), field('Giá vào (USD/1M token)', f.pin), field('Giá ra (USD/1M token)', f.pout),
-        field('Mẫu model video', f.preset, 'Mẫu quyết định tên tham số và độ dài hỗ trợ. Chọn mẫu sẽ điền gợi ý vào ô Model.'), field('Số giây tính tiền mỗi clip', f.fixed, 'Chỉ khi model luôn làm clip cùng độ dài: app dùng số này để báo giá và giữ trần ngân sách.'), field('Giá mỗi giây video (USD)', f.usdPerSecond, 'App dùng số này để báo giá và giữ trần ngân sách. Với mẫu fal (Kling v3 Standard tắt âm thanh: $0.084; Wan 2.7: $0.10 ở 720p, $0.15 ở 1080p) có thể để trống để dùng giá niêm yết; nếu đổi model hoặc bật âm thanh thì phải tự nhập.'),
+        field('Mẫu model video', f.preset, 'Mẫu quyết định tên tham số và độ dài hỗ trợ. Chọn mẫu sẽ điền gợi ý vào ô Model.'), field('Số giây tính tiền mỗi clip', f.fixed, 'Chỉ khi model luôn làm clip cùng độ dài: app dùng số này để báo giá và giữ trần ngân sách.'), field('Giá mỗi megapixel ảnh (USD)', f.pmp, 'fal flux/schnell: $0.003 mỗi megapixel (niêm yết 17/10/2026) nên có thể để trống; model khác phải tự nhập. Ảnh 576×1024 ≈ 0,59 megapixel.'), field('Giá mỗi giây video (USD)', f.usdPerSecond, 'App dùng số này để báo giá và giữ trần ngân sách. Với mẫu fal (Kling v3 Standard tắt âm thanh: $0.084; Wan 2.7: $0.10 ở 720p, $0.15 ở 1080p) có thể để trống để dùng giá niêm yết; nếu đổi model hoặc bật âm thanh thì phải tự nhập.'),
         field('Tham số bổ sung (JSON)', f.extra, 'Tham số riêng của model, gộp vào request. Mặc định app gửi prompt, duration, aspect_ratio, resolution.')),
       h('div', { class: 'row' }, save), msg),
     h('div', { class: 'note' }, list.some((p) => p.kind !== 'openai-compat-text') ? 'Đã có nhà cung cấp video. Tên tham số và dạng kết quả khác nhau theo từng model: hãy chạy thử một lô nhỏ trước. Gemini Omni nhận tỉ lệ (9:16 hoặc 16:9) và độ nét từ lô, nhưng không cho chọn độ dài clip: ô "độ dài" chỉ dùng để báo giá, nên hãy điền "Số giây tính tiền mỗi clip" theo độ dài thực tế bạn thấy.' : demo ? 'Chưa có nhà cung cấp video. Chế độ chạy thử dùng nhà cung cấp giả để bạn xem trọn luồng.' : 'Chưa có nhà cung cấp video nên chưa chạy được lô thật. Hãy thêm một nhà cung cấp loại "Video (fal.ai)" hoặc "Video (Gemini Omni)".'));

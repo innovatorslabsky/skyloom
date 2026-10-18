@@ -82,3 +82,13 @@ describe('saveVideoBytes', () => {
     await expect(saveVideoBytes(dir, 0, new Uint8Array(10), 'video/mp4', 5)).rejects.toThrow(/giới hạn/);
   });
 });
+
+describe('images', () => {
+  it('downloads images into a chosen subfolder with the right extension', async () => {
+    const o = await serve(() => ({ status: 200, type: 'image/png', body: 'PNG' }));
+    const out: BatchOutcome = { spentMicro: 0, cancelled: false, items: [{ idea: 'a', ok: true, mediaUrl: `${o}/x` }] };
+    const res = await downloadBatch(out, dir, { ...opt, subdir: 'images' });
+    expect(res.items[0]!.file).toBe('images/001.png');
+    expect(await saveVideoBytes(dir, 1, new Uint8Array([1]), 'image/jpeg', undefined, 'images')).toBe('images/002.jpg');
+  });
+});

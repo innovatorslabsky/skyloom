@@ -12,10 +12,12 @@ export interface DownloadOptions {
   timeoutMs?: number;
   /** Tests only: allow http://127.0.0.1. Real downloads are https only. */
   allowLoopbackHttp?: boolean;
+  /** Folder under the batch folder. Default `videos`; stills use `images`. */
+  subdir?: string;
   signal?: AbortSignal;
 }
 
-const EXT: Record<string, string> = { 'video/mp4': '.mp4', 'video/webm': '.webm', 'video/quicktime': '.mov' };
+const EXT: Record<string, string> = { 'video/mp4': '.mp4', 'video/webm': '.webm', 'video/quicktime': '.mov', 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp' };
 const isLoopback = (h: string) => h === 'localhost' || h === '127.0.0.1' || h === '[::1]';
 
 function checkUrl(u: URL, o: DownloadOptions): void {
@@ -44,13 +46,13 @@ export async function downloadVideo(url: string, destNoExt: string, o: DownloadO
   if (!res) throw new Error('Quá nhiều lần chuyển hướng.');
   if (!res.ok || !res.body) throw new Error(`Tải video thất bại (HTTP ${res.status}).`);
   const type = (res.headers.get('content-type') ?? '').split(';')[0]!.trim().toLowerCase();
-  if (type && !type.startsWith('video/') && type !== 'application/octet-stream') {
+  if (type && !type.startsWith('video/') && !type.startsWith('image/') && type !== 'application/octet-stream') {
     await res.body.cancel();
-    throw new Error(`Nơi lưu video trả về "${type}", không phải video.`);
+    throw new Error(`Nơi lưu trả về "${type}", không phải video hoặc ảnh.`);
   }
   const declared = Number(res.headers.get('content-length'));
   if (Number.isFinite(declared) && declared > max) { await res.body.cancel(); throw new Error('Video lớn hơn giới hạn cho phép.'); }
-  const dest = `${destNoExt}${EXT[type] ?? '.mp4'}`;
+  const dest = `${destNoExt}${EXT[type] ?? (type.startsWith('image/') ? '.jpg' : '.mp4')}`;
   const part = `${dest}.part`;
   let n = 0;
   const cap = new Transform({ transform(chunk: Buffer, _e, cb) { n += chunk.length; n > max ? cb(new Error('Video lớn hơn giới hạn cho phép.')) : cb(null, chunk); } });
@@ -65,11 +67,11 @@ export async function downloadVideo(url: string, destNoExt: string, o: DownloadO
 }
 
 /** Save a video that arrived inline as bytes. Same size cap and naming as downloads; returns the path relative to the batch folder. */
-export async function saveVideoBytes(dir: string, index: number, bytes: Uint8Array, mime: string, maxBytes = 1024 ** 3): Promise<string> {
+export async function saveVideoBytes(dir: string, index: number, bytes: Uint8Array, mime: string, maxBytes = 1024 ** 3, subdir = 'videos'): Promise<string> {
   if (bytes.length > maxBytes) throw new Error('Video lớn hơn giới hạn cho phép.');
-  const vdir = join(dir, 'videos');
+  const vdir = join(dir, subdir);
   await mkdir(vdir, { recursive: true });
-  const rel = `videos/${String(index + 1).padStart(3, '0')}${EXT[mime.toLowerCase()] ?? '.mp4'}`;
+  const rel = `${subdir}/${String(index + 1).padStart(3, '0')}${EXT[mime.toLowerCase()] ?? '.mp4'}`;
   const part = join(dir, `${rel}.part`);
   await writeFile(part, bytes, { flag: 'wx' });
   await rename(part, join(dir, rel));
@@ -78,7 +80,8 @@ export async function saveVideoBytes(dir: string, index: number, bytes: Uint8Arr
 
 /** Save every finished item's video under `<dir>/videos/NN.<ext>`. File names never come from the URL. Failures are recorded per item. */
 export async function downloadBatch(out: BatchOutcome, dir: string, o: DownloadOptions = {}): Promise<BatchOutcome> {
-  const vdir = join(dir, 'videos');
+  const sub = o.subdir ?? 'videos';
+  const vdir = join(dir, sub);
   const items: ItemOutcome[] = [...out.items];
   const todo = items.map((it, i) => ({ it, i })).filter((x) => x.it.ok && x.it.mediaUrl && !x.it.file);
   if (todo.length === 0) return out;
@@ -90,7 +93,7 @@ export async function downloadBatch(out: BatchOutcome, dir: string, o: DownloadO
       const name = String(i + 1).padStart(3, '0');
       try {
         const path = await downloadVideo(it.mediaUrl!, join(vdir, name), o);
-        items[i] = { ...it, file: `videos/${path.split(/[\\/]/).pop()}` };
+        items[i] = { ...it, file: `${sub}/${path.split(/[\\/]/).pop()}` };
       } catch (e) {
         items[i] = { ...it, downloadError: (e as Error).message };
       }

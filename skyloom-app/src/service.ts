@@ -1,4 +1,4 @@
-import { Budget, JobQueue, NoProviderError, Registry, estimateBatch, mockProvider, FAL_PRESETS, falPreset, falVideo, presetCanPrice, geminiOmniVideo, openAiCompatText, runBatch, usd } from 'skyloom-core';
+import { Budget, JobQueue, NoProviderError, Registry, estimateBatch, mockProvider, FAL_PRESETS, FLUX_SCHNELL, falImage, falPreset, falVideo, presetCanPrice, geminiOmniVideo, openAiCompatText, runBatch, usd } from 'skyloom-core';
 import type { BatchSpec, QueueEvent } from 'skyloom-core';
 import type { BatchOutcome, BatchRequest, EstimateResult, ItemOutcome, ProviderConfig, ProviderInput } from './shared/api.ts';
 
@@ -27,6 +27,7 @@ export interface ServiceOptions {
 
 const ID = /^[a-z0-9][a-z0-9-]{0,39}$/;
 export const FAL_DEFAULT_URL = 'https://queue.fal.run';
+export const FAL_IMAGE_DEFAULT_MODEL = FLUX_SCHNELL.model;
 export const OMNI_DEFAULT_URL = 'https://generativelanguage.googleapis.com';
 export const OMNI_DEFAULT_MODEL = 'gemini-omni-1.1-flash';
 
@@ -34,18 +35,24 @@ export const OMNI_DEFAULT_MODEL = 'gemini-omni-1.1-flash';
 export function validateProvider(p: ProviderInput): string | undefined {
   if (!ID.test(p.id)) return 'Mã nhà cung cấp chỉ gồm chữ thường, số và dấu gạch ngang (tối đa 40 ký tự).';
   if (!p.label.trim()) return 'Cần đặt tên hiển thị.';
-  if (!p.model.trim() && p.kind !== 'gemini-omni-video') return 'Cần nhập tên model.';
+  if (!p.model.trim() && p.kind !== 'gemini-omni-video' && p.kind !== 'fal-image') return 'Cần nhập tên model.';
   if (!p.apiKey.trim()) return 'Cần nhập khoá API.';
-  if (p.kind !== 'openai-compat-text' && p.kind !== 'fal-video' && p.kind !== 'gemini-omni-video') return 'Loại nhà cung cấp không hợp lệ.';
+  if (p.kind !== 'openai-compat-text' && p.kind !== 'fal-video' && p.kind !== 'gemini-omni-video' && p.kind !== 'fal-image') return 'Loại nhà cung cấp không hợp lệ.';
   const fal = p.kind === 'fal-video';
   const omni = p.kind === 'gemini-omni-video';
+  const image = p.kind === 'fal-image';
   let u: URL;
-  try { u = new URL((fal || omni) && !p.baseUrl.trim() ? (fal ? FAL_DEFAULT_URL : OMNI_DEFAULT_URL) : p.baseUrl); } catch { return 'Địa chỉ API không hợp lệ.'; }
+  try { u = new URL((fal || omni || image) && !p.baseUrl.trim() ? (omni ? OMNI_DEFAULT_URL : FAL_DEFAULT_URL) : p.baseUrl); } catch { return 'Địa chỉ API không hợp lệ.'; }
   const loopback = u.hostname === 'localhost' || u.hostname === '127.0.0.1' || u.hostname === '[::1]';
   if (u.protocol !== 'https:' && !(u.protocol === 'http:' && loopback)) return 'Địa chỉ API phải dùng https (chỉ http khi là localhost).';
   if (u.username || u.password) return 'Không đặt tài khoản/mật khẩu trong địa chỉ API.';
-  for (const [k, v] of [['rpm', p.rpm], ['giá vào', p.usdPerMillionIn], ['giá ra', p.usdPerMillionOut], ['giá mỗi giây', p.usdPerSecond], ['số giây tính tiền', p.fixedSeconds]] as const) {
+  for (const [k, v] of [['rpm', p.rpm], ['giá vào', p.usdPerMillionIn], ['giá ra', p.usdPerMillionOut], ['giá mỗi giây', p.usdPerSecond], ['giá mỗi megapixel', p.usdPerMegapixel], ['số giây tính tiền', p.fixedSeconds]] as const) {
     if (v !== undefined && (!Number.isFinite(v) || v < 0)) return `Giá trị "${k}" không hợp lệ.`;
+  }
+  if (image) {
+    // The listed price only covers the default model; any other model needs the user's number.
+    if (p.usdPerMegapixel === undefined && (p.model.trim() || FAL_IMAGE_DEFAULT_MODEL) !== FAL_IMAGE_DEFAULT_MODEL) return 'Với model này hãy nhập giá mỗi megapixel (xem trang model trên fal).';
+    if (p.extraInput !== undefined && (typeof p.extraInput !== 'object' || p.extraInput === null || Array.isArray(p.extraInput) || JSON.stringify(p.extraInput).length > 4000)) return 'Tham số bổ sung phải là một đối tượng JSON nhỏ.';
   }
   if (omni && p.fixedSeconds !== undefined && p.fixedSeconds <= 0) return 'Số giây tính tiền phải lớn hơn 0.';
   if (fal || omni) {
@@ -85,6 +92,7 @@ export class SkyloomService {
     if (error) return { ok: false, error };
     const { apiKey, ...rest } = p;
     const cfg: ProviderConfig = p.kind === 'fal-video' ? { ...rest, baseUrl: rest.baseUrl.trim() || FAL_DEFAULT_URL }
+      : p.kind === 'fal-image' ? { ...rest, baseUrl: rest.baseUrl.trim() || FAL_DEFAULT_URL, model: rest.model.trim() || FAL_IMAGE_DEFAULT_MODEL }
       : p.kind === 'gemini-omni-video' ? { ...rest, baseUrl: rest.baseUrl.trim() || OMNI_DEFAULT_URL, model: rest.model.trim() || OMNI_DEFAULT_MODEL }
       : rest;
     const list = (await this.#o.config.load()).filter((x) => x.id !== cfg.id);
@@ -109,7 +117,13 @@ export class SkyloomService {
       if (!apiKey) continue; // a provider without a key is simply unavailable
       const f = this.#o.fetch ? { fetch: this.#o.fetch } : {};
       try {
-      if (c.kind === 'gemini-omni-video') {
+      if (c.kind === 'fal-image') {
+        registry.register(falImage({
+          id: c.id, label: c.label, apiKey, model: c.model || FAL_IMAGE_DEFAULT_MODEL, baseUrl: c.baseUrl || FAL_DEFAULT_URL,
+          ...(c.usdPerMegapixel !== undefined ? { usdPerMegapixel: c.usdPerMegapixel } : {}), ...(c.extraInput ? { extraInput: c.extraInput } : {}),
+          ...(c.rpm !== undefined ? { rpm: c.rpm } : {}), ...(this.#o.pollIntervalMs !== undefined ? { pollIntervalMs: this.#o.pollIntervalMs } : {}), ...f,
+        }));
+      } else if (c.kind === 'gemini-omni-video') {
         registry.register(geminiOmniVideo({
           id: c.id, label: c.label, apiKey, model: c.model || OMNI_DEFAULT_MODEL, usdPerSecond: c.usdPerSecond ?? 0, baseUrl: c.baseUrl || OMNI_DEFAULT_URL,
           ...(c.fixedSeconds !== undefined ? { fixedSeconds: c.fixedSeconds } : {}), ...(c.extraInput ? { extraBody: c.extraInput } : {}), ...(c.rpm !== undefined ? { rpm: c.rpm } : {}),
@@ -135,12 +149,14 @@ export class SkyloomService {
     return registry;
   }
   #spec(r: BatchRequest): BatchSpec {
-    return { ideas: r.ideas, video: { durationSec: r.durationSec, aspect: r.aspect, resolution: r.resolution }, expandWithText: r.expandWithText };
+    const image = r.mode === 'image';
+    return { ideas: r.ideas, video: { durationSec: r.durationSec, aspect: r.aspect, resolution: r.resolution }, expandWithText: r.expandWithText, ...(image ? { kind: 'image' as const, noun: 'ảnh' } : {}) };
   }
 
   /** Video providers whose preset cannot do this clip length would fail every item; say so up front instead. */
   async #durationProblem(r: BatchRequest): Promise<string | undefined> {
-    const all = (await this.#o.config.load()).filter((c) => c.kind !== 'openai-compat-text');
+    if (r.mode === 'image') return undefined; // stills have no duration
+    const all = (await this.#o.config.load()).filter((c) => c.kind === 'fal-video' || c.kind === 'gemini-omni-video');
     // Google documents only 9:16 and 16:9 for Omni, so a 1:1 batch could never succeed with Omni alone.
     if (all.length > 0 && all.every((c) => c.kind === 'gemini-omni-video') && r.aspect === '1:1') return 'Gemini Omni chỉ hỗ trợ tỉ lệ 9:16 và 16:9.';
     const video = all.filter((c) => c.kind === 'fal-video');
@@ -161,7 +177,7 @@ export class SkyloomService {
       const e = estimateBatch(await this.#registry(), this.#spec(r));
       return { ok: true, ...e };
     } catch (err) {
-      if (err instanceof NoProviderError) return { ok: false, error: 'Chưa có nhà cung cấp cho loại việc này. Hãy thêm ở tab "Nhà cung cấp" (video cần một nhà cung cấp video).' };
+      if (err instanceof NoProviderError) return { ok: false, error: 'Chưa có nhà cung cấp cho loại việc này. Hãy thêm ở tab "Nhà cung cấp" (video cần một nhà cung cấp video, ảnh cần một nhà cung cấp ảnh).' };
       throw err;
     }
   }

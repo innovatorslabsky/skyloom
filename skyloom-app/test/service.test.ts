@@ -255,3 +255,53 @@ describe('gemini omni video provider', () => {
     expect(out.items[0]).toMatchObject({ ok: true, downloadError: expect.stringContaining('không có nơi lưu') });
   });
 });
+
+describe('fal image provider', () => {
+  const image = (over: Partial<ProviderInput> = {}): ProviderInput => ({ id: 'fal-img', label: 'fal img', kind: 'fal-image', baseUrl: '', model: '', apiKey: 'fal-secret', ...over });
+  let close: (() => Promise<void>) | undefined;
+  afterEach(async () => { await close?.(); close = undefined; });
+
+  it('default model needs no price; another model does; defaults are stored and the key is not', async () => {
+    expect(validateProvider(image())).toBeUndefined();
+    expect(validateProvider(image({ model: 'vendor/other' }))).toMatch(/megapixel/);
+    expect(validateProvider(image({ model: 'vendor/other', usdPerMegapixel: 0.01 }))).toBeUndefined();
+    expect(validateProvider(image({ usdPerMegapixel: -1 }))).toMatch(/không hợp lệ/);
+    const m = memory();
+    const s = new SkyloomService({ keys: m.keyStore, config: m.config });
+    expect((await s.saveProvider(image())).ok).toBe(true);
+    expect(m.cfg[0]).toMatchObject({ kind: 'fal-image', baseUrl: 'https://queue.fal.run', model: 'fal-ai/flux/schnell' });
+    expect(JSON.stringify(m.cfg)).not.toContain('fal-secret');
+  });
+
+  it('image mode: estimates by megapixel, ignores duration limits, and runs against a fake fal queue', async () => {
+    const seen: any[] = [];
+    let origin = '';
+    const server = createServer((rq, rs) => {
+      let raw = '';
+      rq.on('data', (d) => (raw += d));
+      rq.on('end', () => {
+        rs.setHeader('content-type', 'application/json');
+        if (rq.method === 'POST') { seen.push(JSON.parse(raw)); rs.end(JSON.stringify({ request_id: 'r', status_url: `${origin}/m/requests/r/status`, response_url: `${origin}/m/requests/r/response` })); }
+        else if (rq.url!.endsWith('/status')) rs.end(JSON.stringify({ status: 'COMPLETED' }));
+        else rs.end(JSON.stringify({ images: [{ url: 'https://cdn.example/i.png', content_type: 'image/png' }] }));
+      });
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    close = () => new Promise((r) => server.close(() => r()));
+    origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const m = memory();
+    const s = new SkyloomService({ keys: m.keyStore, config: m.config, retryBaseMs: 1, pollIntervalMs: 1 });
+    await s.saveProvider(image({ baseUrl: origin }));
+    await s.saveProvider({ id: 'fal-k', label: 'k', kind: 'fal-video', baseUrl: origin, model: 'fal-ai/kling-video/v3/standard/text-to-video', preset: 'kling-v3-standard', apiKey: 'k2' });
+    const r = req({ mode: 'image', ideas: ['núi', 'biển'], durationSec: 1, aspect: '9:16', budgetUsd: 0.05 });
+    const est = await s.estimate(r);
+    expect(est).toMatchObject({ ok: true, perItem: Math.round(0.576 * 1.024 * 0.003 * 1e6) });
+    expect((est as any).text).toContain('2 ảnh');
+    const out = await s.run(r);
+    if ('error' in out) throw new Error(out.error);
+    expect(out.items.map((i) => [i.ok, i.provider, i.mediaUrl])).toEqual([[true, 'fal-img', 'https://cdn.example/i.png'], [true, 'fal-img', 'https://cdn.example/i.png']]);
+    expect(seen.map((b) => b.image_size)).toEqual([{ width: 576, height: 1024 }, { width: 576, height: 1024 }]);
+    // the same duration that is valid for images is rejected for the video-only Kling preset
+    expect(await s.estimate(req({ durationSec: 1 }))).toMatchObject({ ok: false });
+  });
+});

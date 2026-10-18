@@ -31,9 +31,10 @@ function wire(): void {
   ipcMain.handle('batch:run', async (_e, r: BatchRequest) => {
     const dir = join(app.getPath('documents'), 'Skyloom', new Date().toISOString().replace(/[:.]/g, '-'));
     await mkdir(dir, { recursive: true });
-    const out = await service.run(r, (i, bytes, mime) => saveVideoBytes(dir, i, bytes, mime));
+    const subdir = r.mode === 'image' ? 'images' : 'videos';
+    const out = await service.run(r, (i, bytes, mime) => saveVideoBytes(dir, i, bytes, mime, undefined, subdir));
     if ('error' in out) return out;
-    const saved = await downloadBatch(out, dir);
+    const saved = await downloadBatch(out, dir, { subdir });
     await writeManifest(r, saved, dir);
     return { ...saved, outputDir: dir };
   });

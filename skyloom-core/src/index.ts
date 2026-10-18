@@ -7,7 +7,7 @@ export type { QueueEvent, QueueOptions, JobResult, RetryPolicy } from './queue.t
 export { pollUntilDone } from './poll.ts';
 export type { PollState } from './poll.ts';
 export { RateLimiter, Semaphore } from './sync.ts';
-export { estimateBatch, runBatch } from './pipeline.ts';
+export { estimateBatch, imageSize, runBatch } from './pipeline.ts';
 export type { BatchSpec, Estimate, ItemResult } from './pipeline.ts';
 export { openAiCompatText } from './providers/openaiCompat.ts';
 export type { OpenAiCompatConfig } from './providers/openaiCompat.ts';
@@ -18,3 +18,5 @@ export { FAL_PRESETS, falPreset, presetCanPrice, presetInput, presetUsdPerSecond
 export type { FalPreset } from './providers/falPresets.ts';
 export { geminiOmniVideo, findVideo } from './providers/geminiOmni.ts';
 export type { GeminiOmniConfig } from './providers/geminiOmni.ts';
+export { falImage, findImage, FLUX_SCHNELL } from './providers/falImage.ts';
+export type { FalImageConfig } from './providers/falImage.ts';

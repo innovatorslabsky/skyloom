@@ -4,7 +4,7 @@ import type { Aspect, QueueEvent, Strategy } from 'skyloom-core';
 export interface ProviderConfig {
   id: string;
   label: string;
-  kind: 'openai-compat-text' | 'fal-video' | 'gemini-omni-video';
+  kind: 'openai-compat-text' | 'fal-video' | 'gemini-omni-video' | 'fal-image';
   /** For fal-video, empty means the default https://queue.fal.run. */
   baseUrl: string;
   model: string;
@@ -13,6 +13,8 @@ export interface ProviderConfig {
   usdPerMillionOut?: number;
   /** fal-video: USD per second of video, from the model's page. */
   usdPerSecond?: number;
+  /** fal-image: USD per megapixel of output. Optional only for the default model (fal-ai/flux/schnell). */
+  usdPerMegapixel?: number;
   /** gemini-omni-video: seconds billed per clip when the model makes fixed-length clips. */
   fixedSeconds?: number;
   /** fal-video: built-in model preset id (request shape and allowed durations). Empty = generic shape. */
@@ -24,6 +26,8 @@ export interface ProviderConfig {
 export interface ProviderInput extends ProviderConfig { apiKey: string }
 
 export interface BatchRequest {
+  /** What each idea becomes. Default video. Images use `aspect` only (duration and resolution are ignored). */
+  mode?: 'video' | 'image';
   ideas: string[];
   durationSec: number;
   aspect: Aspect;
