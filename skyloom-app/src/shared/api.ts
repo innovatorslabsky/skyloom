@@ -47,7 +47,7 @@ export interface HistoryItem { idea: string; ok: boolean; provider?: string; cos
 /** A past batch, read back from its batch.json. `id` is the folder name. */
 export interface HistoryEntry { id: string; createdAt: string; count: number; okCount: number; spentMicro: number; cancelled: boolean; items: HistoryItem[] }
 
-export interface AppInfo { mode: 'desktop' | 'demo'; secureKeys: boolean; note?: string }
+export interface AppInfo { mode: 'desktop' | 'demo' | 'web'; secureKeys: boolean; note?: string }
 
 /** The only surface the renderer can use. Everything else (keys, network, disk) stays in the main process. */
 export interface SkyloomApi {
@@ -62,6 +62,10 @@ export interface SkyloomApi {
   listHistory(): Promise<HistoryEntry[]>;
   /** Open a past batch's folder in the system file manager (desktop only). */
   openHistory(id: string): Promise<void>;
+  /** Web only: end the session. */
+  logout?(): Promise<void>;
+  /** Web only: URL of a saved file of a past batch (the page cannot open folders on the server). */
+  mediaUrl?(runId: string, file: string): string;
   onEvent(cb: (e: QueueEvent) => void): () => void;
 }
 declare global {

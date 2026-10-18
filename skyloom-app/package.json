@@ -17,7 +17,10 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "pack": "npm run build && electron-builder --dir",
-    "dist": "npm run build && electron-builder"
+    "dist": "npm run build && electron-builder",
+    "build:server": "node scripts/build-server.mjs",
+    "build:web": "npm run build:renderer && npm run build:server",
+    "start:server": "node dist/server/main.cjs"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

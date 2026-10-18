@@ -2,9 +2,11 @@ import { FAL_PRESETS } from 'skyloom-core';
 import { MAX_IDEAS_FILE_BYTES, parseIdeasFile } from './ideas.ts';
 import type { QueueEvent } from 'skyloom-core';
 import { createDemoApi } from './demoApi.ts';
+import { createWebApi } from './webApi.ts';
 import type { BatchOutcome, BatchRequest, ProviderInput, SkyloomApi } from './shared/api.ts';
 
-const api: SkyloomApi = window.skyloom ?? createDemoApi();
+const webMode = document.querySelector('meta[name="skyloom-mode"]')?.getAttribute('content') === 'web'; // set by the web server
+const api: SkyloomApi = window.skyloom ?? (webMode ? createWebApi() : createDemoApi());
 const usdText = (micro: number) => `$${(micro / 1e6).toFixed(micro < 1e4 ? 4 : 2)}`;
 
 // Tiny DOM helper. Text always goes through textContent, never innerHTML, so user/provider text cannot inject markup.
@@ -32,10 +34,11 @@ async function render(): Promise<void> {
     h('div', { class: 'app' },
       h('header', { class: 'top' },
         h('span', { class: 'brand' }, 'Skyloom'),
-        h('span', { class: `badge${info.mode === 'demo' ? ' warn' : ''}` }, info.mode === 'demo' ? 'Chạy thử' : 'Máy tính'),
+        h('span', { class: `badge${info.mode === 'demo' ? ' warn' : ''}` }, info.mode === 'demo' ? 'Chạy thử' : info.mode === 'web' ? 'Web' : 'Máy tính'),
         h('nav', { class: 'tabs', role: 'tablist' },
           ...(['batch', 'history', 'providers'] as const).map((t) =>
-            h('button', { role: 'tab', 'aria-selected': tab === t, onclick: () => { tab = t; void render(); } }, t === 'batch' ? 'Tạo lô' : t === 'history' ? 'Lịch sử' : 'Nhà cung cấp')))),
+            h('button', { role: 'tab', 'aria-selected': tab === t, onclick: () => { tab = t; void render(); } }, t === 'batch' ? 'Tạo lô' : t === 'history' ? 'Lịch sử' : 'Nhà cung cấp'))),
+        ...(api.logout ? [h('button', { class: 'btn ghost', onclick: () => void api.logout!() }, 'Đăng xuất')] : [])),
       ...(info.note ? [h('div', { class: 'note' }, info.note)] : []),
       body));
 }
@@ -123,7 +126,7 @@ async function batchView(): Promise<HTMLElement> {
     });
     const ok = out.items.filter((i) => i.ok).length;
     summary.className = 'summary';
-    summary.textContent = out.cancelled ? `Đã huỷ. Đã tiêu ${usdText(out.spentMicro)}.` : `${ok}/${out.items.length} thành công. Đã tiêu ${usdText(out.spentMicro)}.${out.outputDir ? ` Đã lưu bản ghi vào ${out.outputDir}` : ''}`;
+    summary.textContent = out.cancelled ? `Đã huỷ. Đã tiêu ${usdText(out.spentMicro)}.` : `${ok}/${out.items.length} thành công. Đã tiêu ${usdText(out.spentMicro)}.${out.outputDir ? (webMode ? ' Xem file trong tab Lịch sử.' : ` Đã lưu bản ghi vào ${out.outputDir}`) : ''}`;
   }
 
   const view = h('div', {},
@@ -142,6 +145,11 @@ async function batchView(): Promise<HTMLElement> {
   return view;
 }
 
+/** Small preview of a saved result; loaded only when scrolled to (video preload=none), same-origin only. */
+function mediaPreview(src: string): HTMLElement {
+  return /\.(mp4|webm|mov)$/i.test(src) ? h('video', { src, controls: true, preload: 'none', class: 'preview' }) : h('img', { src, loading: 'lazy', alt: '', class: 'preview' });
+}
+
 async function historyView(demo: boolean): Promise<HTMLElement> {
   const runs = await api.listHistory();
   if (runs.length === 0) return h('div', { class: 'card' }, h('h2', {}, 'Lịch sử'), h('div', { class: 'hint' }, 'Chưa có lô nào. Mỗi lô đã chạy sẽ hiện ở đây.'));
@@ -151,8 +159,9 @@ async function historyView(demo: boolean): Promise<HTMLElement> {
     h('details', {}, h('summary', {}, 'Chi tiết'),
       h('ul', { class: 'items' }, ...r.items.map((it) => h('li', {}, h('span', { class: 'idea', title: it.idea }, it.idea),
         h('span', { class: `st ${it.ok ? 'ok' : 'bad'}` }, it.ok ? `Xong${it.costMicro !== undefined ? ` · ${usdText(it.costMicro)}` : ''}` : 'Lỗi'),
-        h('span', { class: 'sub' }, it.file ?? it.error ?? it.provider ?? ''))))),
-    ...(demo ? [] : [h('div', { class: 'row' }, h('button', { class: 'btn ghost', onclick: () => void api.openHistory(r.id) }, 'Mở thư mục'))]))));
+        h('span', { class: 'sub' }, ...(it.file && api.mediaUrl ? [h('a', { href: api.mediaUrl(r.id, it.file), target: '_blank', rel: 'noopener' }, it.file)] : [it.file ?? it.error ?? it.provider ?? ''])),
+        ...(it.file && api.mediaUrl ? [mediaPreview(api.mediaUrl(r.id, it.file))] : []))))),
+    ...(demo || webMode ? [] : [h('div', { class: 'row' }, h('button', { class: 'btn ghost', onclick: () => void api.openHistory(r.id) }, 'Mở thư mục'))]))));
 }
 
 async function providersView(secureKeys: boolean, demo: boolean): Promise<HTMLElement> {

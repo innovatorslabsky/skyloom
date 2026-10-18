@@ -48,3 +48,4 @@ td, th { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line
 .mt10 { margin-top: 10px; }
 .mt12 { margin-top: 12px; }
 .filebtn { cursor: pointer; width: auto; margin: 0; color: var(--ink); }
+.preview { display: block; max-width: 220px; max-height: 280px; margin-top: 8px; border-radius: 8px; }

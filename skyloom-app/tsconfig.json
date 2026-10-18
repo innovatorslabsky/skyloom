@@ -13,5 +13,5 @@
     "verbatimModuleSyntax": true,
     "erasableSyntaxOnly": true
   },
-  "include": ["src", "electron", "test", "scripts", "vite.config.ts"]
+  "include": ["src", "electron", "server", "test", "scripts", "vite.config.ts"]
 }

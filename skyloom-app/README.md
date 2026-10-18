@@ -45,3 +45,24 @@ Vào tab **Actions** của repo → **Build desktop app** → **Run workflow**, 
 - Linux: khoá API chỉ lưu được khi máy có kho khoá (GNOME Keyring hoặc KWallet); không có thì app từ chối lưu khoá thay vì lưu thường.
 - Tự build trên máy: `npm install` (trong `skyloom-core` rồi `skyloom-app`), sau đó `npm run dist` (file cài nằm trong `release/`) hoặc `npm run pack` (thư mục chạy thử, không đóng thành file cài).
 - Đã kiểm chứng: bản `--dir` cho Linux build được và mở cửa sổ "Skyloom" dưới Xvfb. Chưa kiểm chứng: workflow trên GitHub, file cài Windows và macOS.
+
+## Bản web (Railway)
+
+`server/` là máy chủ web: cùng giao diện và cùng lõi `skyloom-core`, có đăng nhập, chạy trên Railway giống MindFerry (service Dockerfile từ repo GitHub). `Dockerfile` ở gốc repo.
+
+Biến môi trường (đặt trong Railway → service → Variables):
+
+| Biến | Bắt buộc | Ý nghĩa |
+|---|---|---|
+| `SKYLOOM_SECRET` | có | Chuỗi ngẫu nhiên từ 32 ký tự. Ký cookie đăng nhập và mã hoá khoá API lưu trên đĩa. **Đổi giá trị này thì khoá API đã lưu không giải mã được nữa** (phải nhập lại). |
+| `SKYLOOM_PASSWORD_HASH` | có (hoặc `SKYLOOM_PASSWORD`) | Mật khẩu đã băm. Tạo bằng `node scripts/hash-password.mjs 'mật khẩu của bạn'`. |
+| `SKYLOOM_USER` | không | Tên đăng nhập, mặc định `admin`. |
+| `DATA_DIR` | không | Mặc định `/data`. Gắn một **Volume** vào `/data` để giữ cấu hình, khoá (đã mã hoá) và các lô đã chạy qua các lần deploy. |
+| `PORT` | do Railway đặt | |
+
+- Khoá API (fal...) nhập trong giao diện, tab "Nhà cung cấp"; lưu mã hoá AES-256-GCM trong `/data/config/keys.json`, không bao giờ trả ngược ra trình duyệt.
+- Kết quả lưu trong `/data/runs/<thời gian>/` và xem/tải ở tab "Lịch sử".
+- Bảo vệ: đăng nhập một người dùng, cookie HttpOnly + SameSite=Strict (+ Secure qua https), giới hạn đăng nhập sai theo địa chỉ và toàn cục, chặn CSRF (header riêng + kiểm tra Origin), CSP chặt, thông số bảo mật HTTP. Ai đăng nhập được là **tiêu được tiền trên khoá API của bạn**, nên dùng mật khẩu dài.
+- Chạy thử trên máy: `npm run build:web` rồi `SKYLOOM_SECRET=... SKYLOOM_PASSWORD_HASH=... DATA_DIR=./data node dist/server/main.cjs`.
+- Chỉ chạy một lô một lúc; lô chạy nền trên máy chủ nên đóng trình duyệt giữa chừng không làm mất lô (xem lại ở Lịch sử). Nếu máy chủ khởi động lại giữa lô thì lô đó dừng.
+
