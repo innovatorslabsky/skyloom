@@ -27,7 +27,7 @@ async function start(over: { password?: string } = {}) {
   closeServer = () => new Promise((r) => { server.closeAllConnections(); server.close(() => r()); });
 }
 beforeEach(() => { nowMs = 1_800_000_000_000; });
-afterEach(async () => { await closeServer?.(); closeServer = undefined; if (dir) await rm(dir, { recursive: true, force: true }); });
+afterEach(async () => { await closeServer?.(); closeServer = undefined; if (dir) await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); });
 
 const XHR = { 'x-requested-with': 'skyloom', 'content-type': 'application/json' };
 const post = (path: string, body: unknown, headers: Record<string, string> = {}) => fetch(base + path, { method: 'POST', headers: { ...XHR, ...headers }, body: JSON.stringify(body) });
@@ -113,7 +113,9 @@ describe('auth gate', () => {
   it('rejects oversize and malformed bodies cleanly', async () => {
     await start();
     const cookie = await login();
-    expect((await post('/api/estimate', { x: 'a'.repeat(3 * 1024 * 1024) }, { cookie })).status).toBe(413);
+    // The server answers 413 and then drops the connection; on Windows the client can see the reset before the response, so accept either.
+    const big = await post('/api/estimate', { x: 'a'.repeat(3 * 1024 * 1024) }, { cookie }).then((r) => r.status, (e: Error) => (/fetch failed/.test(e.message) ? 'reset' : e.message));
+    expect([413, 'reset']).toContain(big);
     const bad = await fetch(base + '/api/estimate', { method: 'POST', headers: { ...XHR, cookie }, body: '{not json' });
     expect(bad.status).toBe(400);
   });
@@ -166,6 +168,8 @@ describe('api', () => {
     expect(text).toContain('"type":"start"');
     expect(text).toContain('"type":"done"');
     ac.abort();
+    // let the batch finish writing its files before the temp folder is removed
+    for (let i = 0; i < 100; i++) { const cur = (await (await get('/api/run/current', cookie)).json()) as { state: string }; if (cur.state !== 'running') break; await new Promise((r) => setTimeout(r, 50)); }
   });
 });
 
