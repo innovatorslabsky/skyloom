@@ -34,3 +34,14 @@ npm test && npm run typecheck
   - fal.ai: **đã chạy thật ngày 17/10/2026** qua adapter `falVideo`: Kling v3 Standard (3 giây, 9:16, mất 41 giây) và Wan 2.7 (2 giây, 720p) đều trả video; xác nhận `duration` của Wan là số và kết quả nằm ở `video.url`. Chưa kiểm chứng: tải file về (CDN `v3b.fal.media` bị chặn trong môi trường thử) và chạy trọn qua giao diện app. Có mẫu Kling v3 Standard và Wan 2.7, dựng theo schema và giá niêm yết ngày 17/10/2026 trên trang model của fal. Giá mẫu chỉ áp dụng khi dùng đúng model của mẫu và Kling tắt âm thanh (mặc định app tắt); đổi model hoặc bật âm thanh thì phải tự nhập giá.
   - Gemini Omni: xem `docs/gemini-omni-adapter-notes.md`. Không chọn được độ dài clip; chỉ hỗ trợ 9:16 và 16:9.
 - Chưa thử trên Windows/macOS, chưa đóng gói bộ cài (electron-builder), chưa có lịch sử lô, chưa tải file media về máy.
+
+## Bản cài đặt
+
+Không cần cài Node: workflow `.github/workflows/build-app.yml` build sẵn file cài cho Windows (`.exe`), macOS (`.dmg`, Intel và Apple Silicon) và Linux (`.AppImage`).
+Vào tab **Actions** của repo → **Build desktop app** → **Run workflow**, đợi xong rồi tải file trong mục **Artifacts** của lần chạy đó.
+
+- Bản cài **chưa ký số**, nên Windows có thể hiện cảnh báo SmartScreen ("More info" → "Run anyway") và macOS có thể chặn lần mở đầu (chuột phải vào app → Open). Muốn hết cảnh báo cần mua chứng chỉ ký (Windows) và tài khoản Apple Developer (macOS).
+- Chưa có biểu tượng riêng, app dùng biểu tượng mặc định của Electron.
+- Linux: khoá API chỉ lưu được khi máy có kho khoá (GNOME Keyring hoặc KWallet); không có thì app từ chối lưu khoá thay vì lưu thường.
+- Tự build trên máy: `npm install` (trong `skyloom-core` rồi `skyloom-app`), sau đó `npm run dist` (file cài nằm trong `release/`) hoặc `npm run pack` (thư mục chạy thử, không đóng thành file cài).
+- Đã kiểm chứng: bản `--dir` cho Linux build được và mở cửa sổ "Skyloom" dưới Xvfb. Chưa kiểm chứng: workflow trên GitHub, file cài Windows và macOS.

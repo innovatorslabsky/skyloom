@@ -5,7 +5,9 @@
   "type": "module",
   "description": "Skyloom desktop shell: Electron main process runs skyloom-core, the renderer never sees API keys.",
   "main": "dist/electron/main.cjs",
-  "engines": { "node": ">=22.12" },
+  "engines": {
+    "node": ">=22.12"
+  },
   "scripts": {
     "dev": "vite",
     "build:renderer": "vite build",
@@ -13,17 +15,71 @@
     "build": "npm run build:renderer && npm run build:electron",
     "start": "npm run build && electron .",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
-  },
-  "dependencies": {
-    "skyloom-core": "file:../skyloom-core"
+    "typecheck": "tsc --noEmit",
+    "pack": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
     "electron": "^43.0.0",
+    "electron-builder": "^26.15.3",
     "esbuild": "^0.28.0",
+    "skyloom-core": "file:../skyloom-core",
     "typescript": "^7.0.2",
     "vite": "^8.0.0",
     "vitest": "^5.0.4"
+  },
+  "author": "Innovators Lab",
+  "homepage": "https://github.com/innovatorslabsky/skyloom",
+  "build": {
+    "appId": "com.innovatorslab.skyloom",
+    "productName": "Skyloom",
+    "copyright": "Innovators Lab",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.productivity"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "AudioVideo"
+    },
+    "artifactName": "Skyloom-${version}-${os}-${arch}.${ext}",
+    "publish": null
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/innovatorslabsky/skyloom.git",
+    "directory": "skyloom-app"
   }
 }

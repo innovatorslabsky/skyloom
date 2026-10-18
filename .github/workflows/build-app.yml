@@ -1,0 +1,61 @@
+name: Build desktop app
+
+# Builds unsigned installers for Windows, macOS and Linux and attaches them to the run as artifacts.
+# Run it from the Actions tab ("Run workflow"), or push a tag like v0.1.0.
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows
+          - os: macos-latest
+            name: macos
+          - os: ubuntu-latest
+            name: linux
+    runs-on: ${{ matrix.os }}
+    name: build (${{ matrix.name }})
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install core
+        working-directory: skyloom-core
+        run: npm ci
+      - name: Core checks
+        working-directory: skyloom-core
+        run: |
+          npx tsc --noEmit
+          npm test
+      - name: Install app
+        working-directory: skyloom-app
+        run: npm ci
+      - name: App checks
+        working-directory: skyloom-app
+        run: |
+          npm run typecheck
+          npm test
+      - name: Package
+        working-directory: skyloom-app
+        env:
+          # No signing certificates: installers are unsigned (see skyloom-app/README.md).
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npm run dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: skyloom-${{ matrix.name }}
+          path: |
+            skyloom-app/release/*.exe
+            skyloom-app/release/*.dmg
+            skyloom-app/release/*.AppImage
+          if-no-files-found: error
